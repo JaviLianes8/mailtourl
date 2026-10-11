@@ -8,4 +8,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.1.0]
 
-- First release.
+- First release: `parse` and `build` for `mailto:` URIs per RFC 6068, covering
+  `to`, `cc` and `bcc` recipients, `subject`, `body` and other header fields,
+  with correct percent-encoding in both directions.

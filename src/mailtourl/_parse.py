@@ -1,52 +1,135 @@
-"""Parse a mailto: URI into a Mailto (RFC 6068)."""
+"""Parse a mailto: URI into a Mailto (RFC 6068, WHATWG URL preprocessing)."""
 
 from __future__ import annotations
 
+from ._chars import FTEXT, PCHAR, QCHAR
 from ._codec import decode
 from ._errors import MailtoError
+from ._headers import RECIPIENTS
 from ._model import Mailto
+from ._strict import check_address, check_body, check_name, check_raw, check_text, guard
 
 _SCHEME = "mailto:"
-_RECIPIENT_FIELDS = ("to", "cc", "bcc")
+_C0_OR_SPACE = "".join(chr(code) for code in range(0x21))
 
 
-def _split_addresses(raw: str) -> list[str]:
-    """Split a raw comma list into decoded, non-empty addresses."""
-    parts = (decode(part).strip() for part in raw.split(","))
-    return [part for part in parts if part]
+class _Reader:
+    def __init__(self, strict: bool) -> None:
+        self.strict = strict
+        self.recipients: dict[str, list[str]] = {key: [] for key in RECIPIENTS}
+        self.subject: str | None = None
+        self.body: str | None = None
+        self.headers: list[tuple[str, str]] = []
+        self.seen: set[str] = set()
 
+    def addresses(self, key: str, raw: str, offset: int, allowed: frozenset[str]) -> None:
+        if not raw:
+            return
+        for part in raw.split(","):
+            if self.strict:
+                check_raw(part, allowed, offset, f"{key} address")
+            address = decode(part, offset, strict=self.strict)
+            guard(address, part, f"{key} address", offset)
+            if self.strict:
+                check_address(address, part, offset)
+            else:
+                address = address.strip()
+            if address:
+                self.recipients[key].append(address)
+            offset += len(part) + 1
 
-def parse(uri: str) -> Mailto:
-    """Parse a mailto: URI; raise MailtoError when the scheme is missing."""
-    if uri[: len(_SCHEME)].lower() != _SCHEME:
-        raise MailtoError(f"not a mailto: URI: {uri!r}")
-    path, _, query = uri[len(_SCHEME) :].partition("?")
-
-    to = _split_addresses(path)
-    recipients: dict[str, list[str]] = {"to": to, "cc": [], "bcc": []}
-    subject: str | None = None
-    body: str | None = None
-    headers: dict[str, str] = {}
-
-    for segment in query.split("&"):
-        if not segment:
-            continue
-        name, _, value = segment.partition("=")
-        key = decode(name).lower()
-        if key in _RECIPIENT_FIELDS:
-            recipients[key].extend(_split_addresses(value))
-        elif key == "subject":
-            subject = decode(value)
-        elif key == "body":
-            body = decode(value)
+    def field(self, segment: str, offset: int) -> None:
+        raw_name, equals, raw_value = segment.partition("=")
+        value_at = offset + len(raw_name) + 1
+        if self.strict:
+            if not equals:
+                raise MailtoError("header field without '='", offset + len(segment))
+            check_raw(raw_name, QCHAR, offset, "header field name")
+        name = decode(raw_name, offset, strict=self.strict)
+        guard(name, raw_name, "header field name", offset)
+        if self.strict:
+            check_name(name, offset)
         else:
-            headers[decode(name)] = decode(value)
+            # Trimmed before it is classified, so " bcc" cannot hide a recipient, and a
+            # name that is still not a field name ("Bcc:x", controls) is dropped.
+            name = name.strip()
+            if not name or any(char not in FTEXT for char in name):
+                return
+        key = name.lower()
+        if self.strict:
+            if key in self.seen:
+                raise MailtoError(f"header field {name[:60]!r} repeated", offset)
+            self.seen.add(key)
+        if key in RECIPIENTS:
+            self.addresses(key, raw_value, value_at, QCHAR)
+            return
+        if self.strict:
+            check_raw(raw_value, QCHAR, value_at, f"{name} value")
+        value = decode(raw_value, value_at, strict=self.strict)
+        if key == "body":
+            if self.strict:
+                check_body(value, raw_value, value_at)
+            self.body = value if self.body is None else self.body
+            return
+        guard(value, raw_value, f"{name} field", value_at)
+        if self.strict:
+            check_text(value, raw_value, f"{name} field", value_at)
+        if key == "subject":
+            self.subject = value if self.subject is None else self.subject
+        else:
+            self.headers.append((name, value))
 
-    return Mailto(
-        to=to,
-        cc=recipients["cc"],
-        bcc=recipients["bcc"],
-        subject=subject,
-        body=body,
-        headers=headers,
-    )
+    def result(self) -> Mailto:
+        return Mailto(
+            self.recipients["to"],
+            cc=self.recipients["cc"],
+            bcc=self.recipients["bcc"],
+            subject=self.subject,
+            body=self.body,
+            headers=self.headers,
+        )
+
+
+def _read(text: str, strict: bool) -> Mailto:
+    if text[: len(_SCHEME)].lower() != _SCHEME:
+        raise MailtoError("not a mailto: URI", 0)
+    start = len(_SCHEME)
+    hier, hash_mark, _ = text[start:].partition("#")
+    if hash_mark and strict:
+        raise MailtoError("a mailto: URI takes no fragment", start + len(hier))
+    path, question, query = hier.partition("?")
+    reader = _Reader(strict)
+    reader.addresses("to", path, start, PCHAR)
+    if question:
+        offset = start + len(path) + 1
+        for segment in query.split("&"):
+            if segment:
+                reader.field(segment, offset)
+            elif strict:
+                raise MailtoError("empty header field", offset)
+            offset += len(segment) + 1
+    return reader.result()
+
+
+def parse(uri: str, *, strict: bool = False) -> Mailto:
+    """Parse a mailto: URI into a Mailto.
+
+    The default mode reads a URI the way a browser hands it over: leading and trailing
+    C0 controls and spaces are stripped, tabs and newlines removed, the fragment ignored.
+    ``strict=True`` checks the text against the RFC 6068 grammar instead. In both modes
+    a decoded CR, LF or NUL outside the body raises MailtoError: it would inject a header.
+    """
+    if not isinstance(uri, str):
+        raise TypeError(f"expected str, got {type(uri).__name__}")
+    if strict:
+        return _read(uri, strict=True)
+    begin = len(uri) - len(uri.lstrip(_C0_OR_SPACE))
+    end = len(uri.rstrip(_C0_OR_SPACE))
+    kept = [index for index in range(begin, end) if uri[index] not in "\t\n\r"]
+    try:
+        return _read("".join(uri[index] for index in kept), strict=False)
+    except MailtoError as error:
+        if error.offset is None:
+            raise
+        offset = kept[error.offset] if error.offset < len(kept) else len(uri)
+        raise MailtoError(error.reason, offset) from None

@@ -1,26 +1,54 @@
-"""Percent-encoding helpers for mailto: URI components (RFC 6068)."""
+"""Percent-encoding and decoding for mailto: URI components (RFC 3986, RFC 6068)."""
 
 from __future__ import annotations
 
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, unquote_to_bytes
 
-# some-delims from RFC 6068 that may stay literal in a field value. The comma is
-# the recipient separator, so it is kept out of the address set and encoded
-# inside each address, which lets a round trip survive an address that holds one.
-_HEADER_SAFE = "!$'()*+,;:@"
-_ADDRESS_SAFE = "!$'()*+;:@"
+from ._address import split_address
+from ._chars import ADDRESS_SAFE, FIELD_SAFE, HEX, UNRESERVED
+from ._errors import MailtoError
 
 
-def encode_header(value: str) -> str:
-    """Percent-encode a header name or value."""
-    return quote(value, safe=_HEADER_SAFE)
+def _quote(value: str, safe: str) -> str:
+    try:
+        return quote(value, safe=safe)
+    except UnicodeEncodeError as error:
+        raise MailtoError(f"{value[:60]!r} holds a code point UTF-8 cannot encode") from error
 
 
-def encode_address(value: str) -> str:
-    """Percent-encode a single recipient address."""
-    return quote(value, safe=_ADDRESS_SAFE)
+def encode_field(value: str) -> str:
+    """Percent-encode a header field name or value."""
+    return _quote(value, FIELD_SAFE)
 
 
-def decode(value: str) -> str:
-    """Reverse percent-encoding, decoding the bytes as UTF-8."""
-    return unquote(value)
+def encode_address(address: str) -> str:
+    """Percent-encode one validated address; "@" is encoded inside the local part."""
+    local, domain = split_address(address)
+    if not domain.startswith("["):
+        # RFC 6068 allows percent-encoding in a domain name only for UTF-8, so an ASCII
+        # character that must be encoded somewhere ("&" and "=" in a cc or bcc field) has
+        # no valid spelling there.
+        for char in domain:
+            if ord(char) < 0x80 and char not in UNRESERVED and char not in ADDRESS_SAFE:
+                raise MailtoError(f"{char!r} cannot be written in a domain name")
+    return f"{_quote(local, ADDRESS_SAFE)}@{_quote(domain, ADDRESS_SAFE)}"
+
+
+def check_escapes(raw: str, offset: int) -> None:
+    """Raise MailtoError at the first "%" not followed by two hex digits."""
+    index = raw.find("%")
+    while index >= 0:
+        if raw[index + 1 : index + 2] not in HEX or raw[index + 2 : index + 3] not in HEX:
+            raise MailtoError("incomplete percent-encoding", offset + index)
+        index = raw.find("%", index + 3)
+
+
+def decode(raw: str, offset: int, *, strict: bool) -> str:
+    """Reverse percent-encoding as UTF-8; strict mode refuses broken escapes and UTF-8."""
+    if not strict:
+        return unquote(raw)
+    check_escapes(raw, offset)
+    try:
+        return unquote_to_bytes(raw).decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise MailtoError("percent-encoded bytes are not UTF-8", offset) from error

@@ -4,7 +4,7 @@ import mailtourl
 
 # The public API. Add every exported name here as the library grows; this list is the
 # contract and the test below fails if the module and this list disagree.
-PUBLIC_API: list[str] = ["Mailto", "MailtoError", "build", "parse"]
+PUBLIC_API: list[str] = ["Mailto", "MailtoError", "build", "is_address", "parse"]
 
 
 def test_all_lists_exactly_the_public_api() -> None:

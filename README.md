@@ -23,10 +23,10 @@ uri = build(
 # "&subject=Re:%20caf%C3%A9%20%26%20tea&body=Hello%0AWorld"
 
 mail = parse(uri)
-mail.to       # ["jane@example.com", "jack@example.com"]
-mail.cc       # ["team@example.com"]
+mail.to  # ["jane@example.com", "jack@example.com"]
+mail.cc  # ["team@example.com"]
 mail.subject  # "Re: café & tea"
-mail.body     # "Hello\nWorld"
+mail.body  # "Hello\nWorld"
 ```
 
 `parse` reads recipients from the path and from `to`, `cc` and `bcc` fields,

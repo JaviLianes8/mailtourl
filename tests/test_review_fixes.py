@@ -129,3 +129,14 @@ def test_error_messages_are_bounded() -> None:
     with pytest.raises(MailtoError) as caught:
         parse("mailto:" + "a" * 100_000, strict=True)
     assert len(str(caught.value)) < 200
+
+
+def test_a_lenient_offset_counts_raw_non_ascii_as_its_utf8_bytes() -> None:
+    uri = "mailto:a@x?subject=caf" + chr(0xE9) + "%0A"
+    with pytest.raises(MailtoError) as caught:
+        parse(uri)
+    assert caught.value.offset == uri.index("%0A")
+
+
+def test_lenient_addresses_are_trimmed_of_unicode_whitespace() -> None:
+    assert parse("mailto:%C2%A0a@x.example%E3%80%80").to == ("a@x.example",)

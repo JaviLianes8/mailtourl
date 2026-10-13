@@ -14,7 +14,7 @@ Progress:
 - [x] Docs and packaging: README, CHANGELOG, metadata, sdist contents
 - [x] Gates: ruff format, ruff check, mypy --strict, pytest
 - [x] Mutation run: removing guarded logic makes the suite fail
-- [ ] Independent review findings fixed with regression tests
+- [x] Independent review findings fixed with regression tests
 - [ ] Pull request opened, guard clean
 
 ## Starting point
@@ -133,3 +133,34 @@ sources below:
   `@` inside a quoted local part, the unit separator, an upper-case ignored field, type
   messages, a non-string `is_address` argument, a strict parse from standard input), now
   in `tests/test_mutation_gaps.py`. The rerun leaves none alive.
+- After the review fixes the run grew to 137 mutations on a fresh clone. Two survived
+  (the byte count of a raw non-ASCII character in an error offset, and Unicode
+  whitespace trimmed around a lenient address); both now have a test and are killed.
+
+## Review fixes
+
+An independent review attacked the branch; each finding below is fixed with a test that
+fails on the code before the fix (`tests/test_review_fixes.py` and the updated tests):
+
+- Header injection covered only CR, LF and NUL. Every character `str.splitlines` breaks
+  on (VT, FF, the file, group and record separators, NEL, U+2028, U+2029) is now refused
+  outside the body in both modes, and C1 controls are refused in strict mode and in the
+  builder.
+- A field name padded with Unicode whitespace, or one holding a colon (`Bcc:x=1`), could
+  still hide a recipient. Names are trimmed of all whitespace before they are
+  classified, and the default mode drops a name that is still not a field name.
+- Strict mode accepted a percent-encoded `@` separator, which skipped the domain escape
+  rule; it now requires the `@` raw.
+- Error offsets pointed at the start of a field; they now point at the offending
+  character, counting a percent-encoded octet as three input characters.
+- `is_address` accepted whitespace, line separators, invisible formatting characters and
+  noncharacters outside ASCII; they are refused, the IDNA joiners excepted.
+- `Mailto.safe()` keeps only recipients that are addr-specs, so a lenient reading that
+  holds two addresses in one entry or a display name is dropped.
+- Type errors name bytes and non-pair headers clearly; list pairs are accepted; error
+  messages truncate the input they quote.
+- Docs: strict mode's refusal of repeated fields is described as a policy beyond the
+  ABNF, `to_uri` on a leniently read value is documented, and the CHANGELOG lists the
+  breaking changes.
+- Kept as designed: the default mode refuses a link with a line break in a header
+  instead of cleaning it, since a silent rewrite would hide the attempt from the caller.

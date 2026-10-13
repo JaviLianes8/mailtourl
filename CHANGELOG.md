@@ -16,11 +16,18 @@ All notable changes to this project are documented here. The format follows
 - `Mailto.recipients`, `header`, `header_all`, `safe` and `to_uri`.
 - A `mailtourl` command (and `python -m mailtourl`) with `parse` and `build`.
 
-### Changed
+### Changed (breaking)
 
-- A decoded CR, LF or NUL outside the body raises `MailtoError` in every mode instead of
-  reaching a header value. Field names are decoded and trimmed before they are
-  classified, so an encoded or padded `bcc` lands in `bcc`.
+- `Mailto` holds tuples instead of lists and `headers` is a tuple of `(name, value)`
+  pairs instead of a dict; every argument but `to` is keyword-only.
+- `build` raises `MailtoError` for input 0.1.0 wrote as is (see below), and body line
+  breaks come out as `%0D%0A`.
+- A decoded NUL or any line break `str.splitlines` knows, outside the body, raises
+  `MailtoError` in every mode instead of reaching a header value. Field names are
+  decoded and trimmed before they are classified, so an encoded or padded `bcc` lands in
+  `bcc`, and in the default mode a name that is not a field name is dropped.
+
+### Changed
 - `parse` applies the URL Standard preprocessing (leading and trailing controls and
   spaces stripped, tabs and newlines removed) and ignores the fragment.
 - The first `subject` and `body` win; repeated other fields are all kept.

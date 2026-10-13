@@ -4,8 +4,9 @@ Parse, validate and safely build `mailto:` URIs per RFC 6068.
 
 - Reads a link the way a browser hands it to the mail client, or checks it against the
   RFC 6068 grammar with the offset of the first problem.
-- Refuses header injection: a percent-encoded line break outside the body never comes
-  back as a header value, and an encoded or padded `bcc` cannot hide a recipient.
+- Refuses header injection: a percent-encoded line break of any kind outside the body
+  never comes back as a header value, and an encoded or padded `bcc` cannot hide a
+  recipient.
 - Builds URIs that pass through a browser unchanged, with every field encoded and body
   line breaks written as `%0D%0A`.
 - Typed, frozen values, no dependencies, a command line for scripts.
@@ -57,9 +58,11 @@ except MailtoError as error:
 
 `strict=True` holds the text to the RFC 6068 grammar: raw characters allowed in each
 part, complete escapes that decode to UTF-8, every address an RFC 5322 addr-spec (no
-comments, no obsolete forms, no bare whitespace), ASCII escapes in a domain only inside
-a domain literal, field names that are RFC 5322 field names, body line breaks as CRLF,
-no repeated field and no fragment.
+comments, no obsolete forms, no whitespace) with an unencoded `@` before the domain,
+ASCII escapes in a domain only inside a domain literal, field names that are RFC 5322
+field names, body line breaks as CRLF, no controls outside the body and no fragment. It
+also refuses a repeated field: the ABNF allows one, but section 2 advises against it
+because clients disagree on what it means. The offset points at the offending character.
 
 ### Header injection and unsafe fields
 
@@ -70,7 +73,7 @@ try:
     parse("mailto:a@example.com?subject=Hi%0D%0ABcc:%20spy@evil.example")
 except MailtoError as error:
     print(error)
-# '\r' in the subject field: header injection at offset 29
+# '\r' in the subject field: header injection at offset 31
 
 mail = parse("mailto:a@example.com?%62cc=spy@evil.example&From=boss@example.com&Keywords=k")
 print(mail.bcc, mail.headers)
@@ -79,10 +82,13 @@ print(mail.safe().headers)
 # (('Keywords', 'k'),)
 ```
 
-A decoded CR, LF or NUL outside the body raises `MailtoError` in both modes. Field names
-are decoded and trimmed before they are classified, so `%62cc` or ` bcc` land in `bcc`.
-RFC 6068 section 4 calls only subject, keywords and body safe in general:
-`Mailto.safe(allow=...)` keeps recipients, subject, body and the headers you allow.
+Outside the body, a decoded NUL or any character `str.splitlines` breaks on (CR, LF,
+VT, FF, the file, group and record separators, NEL, U+2028, U+2029) raises
+`MailtoError` in both modes. Field names are decoded and trimmed of whitespace before
+they are classified, so `%62cc` or ` bcc` land in `bcc`; in the default mode a name that
+is still not an RFC 5322 field name (a colon, a control, non-ASCII) is dropped. RFC 6068
+section 4 calls only subject, keywords and body safe in general: `Mailto.safe(allow=...)`
+keeps subject, body, the headers you allow and the recipients that are addr-specs.
 
 ### Building
 
@@ -108,7 +114,9 @@ is not an addr-spec (display names included), a domain name holding an ASCII cha
 that would need an escape, a control character outside the body, a header name that is
 not a field name, a repeated header, a header that has its own argument, and the fields
 RFC 6068 section 3 says a client must ignore (originator, routing, trace and MIME
-fields). In HTML, escape the `&` of the result with `html.escape`.
+fields). `Mailto.to_uri` applies the same checks, so a value read in the default mode
+may not build as is: call `safe()` first. In HTML, escape the `&` of the result with
+`html.escape`.
 
 ## Command line
 
@@ -131,7 +139,7 @@ mailtourl` works the same way.
 | `build(to, *, cc, bcc, subject, body, headers)` | Write a URI, refusing unsafe or invalid input |
 | `Mailto` | Frozen value: `to`, `cc`, `bcc`, `subject`, `body`, `headers`, `recipients`, `header()`, `header_all()`, `safe()`, `to_uri()` |
 | `MailtoError` | `ValueError` with `reason` and `offset` |
-| `is_address(text)` | True for an addr-spec a `mailto:` URI may carry |
+| `is_address(text)` | True for an addr-spec a `mailto:` URI may carry (no whitespace, controls or invisible characters) |
 
 ## Standards
 

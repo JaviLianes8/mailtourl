@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import string
+import unicodedata
 
 _ALNUM = string.ascii_letters + string.digits
 HEX = frozenset(string.hexdigits)
@@ -33,10 +34,22 @@ DTEXT = frozenset(chr(c) for c in range(33, 127)) - frozenset("[]\\")
 FTEXT = frozenset(chr(c) for c in range(33, 127)) - frozenset(":")
 
 
+# Every character str.splitlines breaks on, plus NUL: in a header each one can end the
+# line (or truncate it in C-based clients), so all are refused outside the body.
+LINE_BREAKS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029\x00")
+# Unicode categories that are whitespace, controls or invisible formatting: RFC 6068
+# section 2 forbids whitespace in an address, and these would hide what a reader sees.
+_HIDDEN = frozenset({"Cc", "Cf", "Cs", "Zs", "Zl", "Zp"})
+# The joiners are formatting characters that IDNA allows in context.
+_JOINERS = frozenset("\u200c\u200d")
+
+
 def is_utf8_text(char: str) -> bool:
-    """A non-ASCII code point that UTF-8 can encode (RFC 6532 UTF8-non-ascii)."""
+    """A visible non-ASCII code point (RFC 6532 UTF8-non-ascii, less hidden characters)."""
     code = ord(char)
-    return code >= 0x80 and not 0xD800 <= code <= 0xDFFF
+    if code < 0x80 or 0xFDD0 <= code <= 0xFDEF or code & 0xFFFE == 0xFFFE:
+        return False
+    return char in _JOINERS or unicodedata.category(char) not in _HIDDEN
 
 
 def is_atext(char: str) -> bool:
@@ -53,6 +66,6 @@ def is_vchar(char: str) -> bool:
 
 
 def is_control(char: str) -> bool:
-    """A C0 control or DEL."""
+    """A C0 control, DEL, a C1 control or a line or paragraph separator."""
     code = ord(char)
-    return code < 0x20 or code == 0x7F
+    return code < 0x20 or 0x7F <= code <= 0x9F or char in LINE_BREAKS

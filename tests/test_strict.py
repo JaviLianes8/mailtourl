@@ -20,6 +20,7 @@ VALID = [
     "mailto:%22%22@x.example",
     "mailto:caf%C3%A9@%C3%A9.example",
     "mailto:a@x.example?body=one%0D%0Atwo%09three",
+    "mailto:a@x.example?cc=",
     "mailto:a@x.example?X-Custom!$'()*+,;@=v!$'()*+,;:@-._~",
 ]
 
@@ -53,14 +54,13 @@ INVALID = [
     ("mailto:a@x.example?caf%C3%A9=v", 19, "field name"),
     ("mailto:a@x.example?subject=a&Subject=b", 29, "repeated"),
     ("mailto:a@x.example?cc=b@x.example&CC=c@x.example", 34, "repeated"),
-    ("mailto:a@x.example?body=a%0Ab", 24, "line break"),
-    ("mailto:a@x.example?body=a%0D", 24, "line break"),
-    ("mailto:a@x.example?body=a%07", 24, "control"),
-    ("mailto:a@x.example?subject=a%07", 27, "control"),
-    ("mailto:a@x.example?subject=a%09b%7F", 27, "control"),
+    ("mailto:a@x.example?body=a%0Ab", 25, "line break"),
+    ("mailto:a@x.example?body=a%0D", 25, "line break"),
+    ("mailto:a@x.example?body=a%07", 25, "control"),
+    ("mailto:a@x.example?subject=a%07", 28, "control"),
+    ("mailto:a@x.example?subject=a%09b%7F", 32, "control"),
     ("mailto:a@x.example,", 19, "empty address"),
     ("mailto:a;b@x.example", 7, "not allowed in local part"),
-    ("mailto:a@x.example?cc=", None, None),
     ("mailto:ax.example", 7, "missing '@'"),
     ("mailto:a@", 7, "empty domain"),
     ("mailto:a..b@x.example", 7, "empty dot-separated"),
@@ -74,7 +74,7 @@ INVALID = [
     ("mailto:%22a%5C", 7, "quoted-pair"),
     ("mailto:%22a%01%22@x.example", 7, "quoted local part"),
     ("mailto:a(comment)@x.example", 7, "not allowed in local part"),
-    ("mailto:a@ex%61mple.com", 9, "domain"),
+    ("mailto:a@ex%61mple.com", 11, "domain"),
     ("mailto:a@%5B1.2.3.4", 7, "domain"),
     ("mailto:a@%5Bx%5Cy%5D", 7, "domain literal"),
     ("mailto:a@%5B%C3%A9%5D", 7, "domain literal"),
@@ -82,21 +82,17 @@ INVALID = [
 
 
 @pytest.mark.parametrize(("uri", "offset", "words"), INVALID)
-def test_invalid_uris_raise_with_offset(uri: str, offset: int | None, words: str | None) -> None:
-    if words is None:
-        assert parse(uri, strict=True) == Mailto("a@x.example")
-        return
+def test_invalid_uris_raise_with_offset(uri: str, offset: int, words: str) -> None:
     with pytest.raises(MailtoError) as caught:
         parse(uri, strict=True)
     assert words in caught.value.reason
     assert caught.value.offset == offset
 
 
-def test_every_invalid_uri_still_parses_leniently_or_names_injection() -> None:
+def test_every_invalid_uri_but_the_leading_space_parses_leniently() -> None:
     for uri, _, words in INVALID:
-        if words in ("not a mailto",):
-            continue
-        assert isinstance(parse(uri), Mailto), uri
+        if words != "not a mailto":
+            assert isinstance(parse(uri), Mailto), uri
 
 
 def test_strict_keeps_the_rfc_example_with_both_path_and_to_field() -> None:

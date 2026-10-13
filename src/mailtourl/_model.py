@@ -5,11 +5,14 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from ._address import is_address
 from ._build import build
 from ._headers import DEFAULT_SAFE
 
 
 def _strings(value: str | Iterable[str], what: str) -> tuple[str, ...]:
+    if isinstance(value, (bytes, bytearray)):
+        raise TypeError(f"{what} must be str or an iterable of str, got bytes")
     items = (value,) if isinstance(value, str) else tuple(value)
     for item in items:
         if not isinstance(item, str):
@@ -21,7 +24,7 @@ def _pairs(value: Mapping[str, str] | Iterable[tuple[str, str]]) -> tuple[tuple[
     items = tuple(value.items()) if isinstance(value, Mapping) else tuple(value)
     pairs: list[tuple[str, str]] = []
     for item in items:
-        if isinstance(item, str) or len(item) != 2:
+        if not isinstance(item, (tuple, list)) or len(item) != 2:
             raise TypeError("headers must hold (name, value) pairs")
         name, text = item
         if not isinstance(name, str) or not isinstance(text, str):
@@ -86,14 +89,15 @@ class Mailto:
     def safe(self, allow: Iterable[str] = DEFAULT_SAFE) -> Mailto:
         """A copy keeping only the headers named in ``allow`` (RFC 6068 section 4).
 
-        Recipients, subject and body are kept. The default keeps ``keywords``, the one
-        other field the RFC calls safe in general; widen it for sources you trust.
+        Subject and body are kept, and every recipient that is an addr-spec (``is_address``),
+        so a lenient reading such as ``a@x,b@y`` held in one entry or a display name is
+        dropped. The default keeps ``keywords``, the one other field the RFC calls safe in
+        general; widen it for sources you trust.
         """
         keep = {name.lower() for name in _strings(allow, "allow")}
         pairs = tuple(pair for pair in self.headers if pair[0].lower() in keep)
-        return Mailto(
-            self.to, cc=self.cc, bcc=self.bcc, subject=self.subject, body=self.body, headers=pairs
-        )
+        to, cc, bcc = (tuple(filter(is_address, slot)) for slot in (self.to, self.cc, self.bcc))
+        return Mailto(to, cc=cc, bcc=bcc, subject=self.subject, body=self.body, headers=pairs)
 
     def to_uri(self) -> str:
         """Build the URI with the same rules and checks as ``build``."""

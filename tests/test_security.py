@@ -30,7 +30,7 @@ def test_the_injection_error_points_at_the_field() -> None:
     uri = "  mailto:a@x.example?subject=Hi%0D%0ABcc:x"
     with pytest.raises(MailtoError) as caught:
         parse(uri)
-    assert caught.value.offset == uri.index("Hi")
+    assert caught.value.offset == uri.index("%0D")
     assert "header injection" in str(caught.value)
 
 

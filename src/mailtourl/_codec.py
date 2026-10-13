@@ -13,7 +13,7 @@ def _quote(value: str, safe: str) -> str:
     try:
         return quote(value, safe=safe)
     except UnicodeEncodeError as error:
-        raise MailtoError(f"{value!r} holds a code point UTF-8 cannot encode") from error
+        raise MailtoError(f"{value[:60]!r} holds a code point UTF-8 cannot encode") from error
 
 
 def encode_field(value: str) -> str:

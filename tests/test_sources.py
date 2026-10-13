@@ -156,7 +156,11 @@ def test_built_uris_hold_nothing_a_browser_would_re_encode(url_standard: str) ->
     rule = url_standard.split("<dfn>query percent-encode set</dfn>", 1)[1].split("<p", 1)[0]
     query_set = {chr(int(code, 16)) for code in re.findall(r"U\+([0-9A-F]{4})", rule)}
     assert query_set == {" ", '"', "#", "<", ">"}
-    values = ["\t", *(chr(code) for code in range(0x20, 0x300) if code != 0x7F), "\U0001f600"]
+    values = [
+        "\t",
+        *(chr(code) for code in range(0x20, 0x300) if not 0x7F <= code <= 0x9F),
+        "\U0001f600",
+    ]
     for value in values:
         uri = build("a@x.example", subject=value, body=value, headers={"X-Value": value})
         assert all(0x20 < ord(char) <= 0x7E and char not in query_set for char in uri), value

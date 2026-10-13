@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ._chars import PCHAR, QCHAR
+from ._chars import FTEXT, PCHAR, QCHAR
 from ._codec import decode
 from ._errors import MailtoError
 from ._headers import RECIPIENTS
@@ -29,11 +29,11 @@ class _Reader:
             if self.strict:
                 check_raw(part, allowed, offset, f"{key} address")
             address = decode(part, offset, strict=self.strict)
-            guard(address, f"{key} address", offset)
+            guard(address, part, f"{key} address", offset)
             if self.strict:
                 check_address(address, part, offset)
             else:
-                address = address.strip(" \t")
+                address = address.strip()
             if address:
                 self.recipients[key].append(address)
             offset += len(part) + 1
@@ -46,18 +46,19 @@ class _Reader:
                 raise MailtoError("header field without '='", offset + len(segment))
             check_raw(raw_name, QCHAR, offset, "header field name")
         name = decode(raw_name, offset, strict=self.strict)
-        guard(name, "header field name", offset)
+        guard(name, raw_name, "header field name", offset)
         if self.strict:
             check_name(name, offset)
         else:
-            # Trimmed before it is classified, so " bcc" cannot hide a recipient.
-            name = name.strip(" \t")
-            if not name:
+            # Trimmed before it is classified, so " bcc" cannot hide a recipient, and a
+            # name that is still not a field name ("Bcc:x", controls) is dropped.
+            name = name.strip()
+            if not name or any(char not in FTEXT for char in name):
                 return
         key = name.lower()
         if self.strict:
             if key in self.seen:
-                raise MailtoError(f"header field {name!r} repeated", offset)
+                raise MailtoError(f"header field {name[:60]!r} repeated", offset)
             self.seen.add(key)
         if key in RECIPIENTS:
             self.addresses(key, raw_value, value_at, QCHAR)
@@ -67,12 +68,12 @@ class _Reader:
         value = decode(raw_value, value_at, strict=self.strict)
         if key == "body":
             if self.strict:
-                check_body(value, value_at)
+                check_body(value, raw_value, value_at)
             self.body = value if self.body is None else self.body
             return
-        guard(value, f"{name} field", value_at)
+        guard(value, raw_value, f"{name} field", value_at)
         if self.strict:
-            check_text(value, f"{name} field", value_at)
+            check_text(value, raw_value, f"{name} field", value_at)
         if key == "subject":
             self.subject = value if self.subject is None else self.subject
         else:

@@ -21,6 +21,8 @@ Headers: TypeAlias = Mapping[str, str] | Iterable[tuple[str, str]] | None
 def _as_list(value: Addresses, what: str) -> list[str]:
     if value is None:
         return []
+    if isinstance(value, (bytes, bytearray)):
+        raise TypeError(f"{what} must be str or an iterable of str, got bytes")
     items = [value] if isinstance(value, str) else list(value)
     for item in items:
         if not isinstance(item, str):
@@ -38,11 +40,13 @@ def _join(value: Addresses, what: str) -> str:
     return ",".join(encoded)
 
 
-def _check_text(value: object, what: str) -> str:
+def _check_text(value: object, what: str, *, body: bool = False) -> str:
     if not isinstance(value, str):
         raise TypeError(f"{what} must be str, got {type(value).__name__}")
     for char in value:
-        if is_control(char) and char != "\t":
+        # A body line may hold the Unicode separators; a header may not (str.splitlines).
+        hidden = 0x7F <= ord(char) <= 0x9F or ord(char) < 0x20 if body else is_control(char)
+        if hidden and char != "\t":
             # Line breaks outside the body are how header injection works.
             raise MailtoError(f"control character {char!r} in {what}")
     return value
@@ -54,7 +58,7 @@ def _encode_body(body: object) -> str:
     # RFC 6068 section 5: line breaks in the body MUST be encoded as %0D%0A.
     lines = _LINE_BREAK.split(body)
     for line in lines:
-        _check_text(line, "body")
+        _check_text(line, "body", body=True)
     return encode_field("\r\n".join(lines))
 
 
@@ -65,21 +69,21 @@ def _header_pairs(headers: Headers) -> list[tuple[str, str]]:
     seen: set[str] = set()
     pairs: list[tuple[str, str]] = []
     for item in items:
-        if isinstance(item, str) or len(item) != 2:
+        if not isinstance(item, (tuple, list)) or len(item) != 2:
             raise TypeError("headers must hold (name, value) pairs")
         name, value = item
         _check_text(name, "header name")
         if not name or any(char not in FTEXT for char in name):
-            raise MailtoError(f"{name!r} is not an RFC 5322 header field name")
+            raise MailtoError(f"{name[:60]!r} is not an RFC 5322 header field name")
         key = name.lower()
         if key in DEDICATED:
             raise MailtoError(f"pass {key!r} through its own argument, not headers")
         if is_ignored(name):
-            raise MailtoError(f"RFC 6068 section 3 says clients MUST ignore {name!r}")
+            raise MailtoError(f"RFC 6068 section 3 says clients MUST ignore {name[:60]!r}")
         if key in seen:
-            raise MailtoError(f"header {name!r} given twice")
+            raise MailtoError(f"header {name[:60]!r} given twice")
         seen.add(key)
-        pairs.append((name, _check_text(value, f"header {name!r}")))
+        pairs.append((name, _check_text(value, f"header {name[:60]!r}")))
     return pairs
 
 

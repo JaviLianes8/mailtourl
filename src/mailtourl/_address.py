@@ -18,15 +18,15 @@ def _quoted_end(text: str) -> int:
             if index + 1 >= len(text) or not (
                 is_vchar(text[index + 1]) or text[index + 1] in " \t"
             ):
-                raise MailtoError(f"bad quoted-pair in address {text!r}")
+                raise MailtoError(f"bad quoted-pair in address {text[:60]!r}")
             index += 2
             continue
         if char in " \t":
-            raise MailtoError(f"bare whitespace in the quoted local part of {text!r}")
+            raise MailtoError(f"bare whitespace in the quoted local part of {text[:60]!r}")
         if not is_qtext(char):
             raise MailtoError(f"character {char!r} not allowed in the quoted local part")
         index += 1
-    raise MailtoError(f"unterminated quoted local part in {text!r}")
+    raise MailtoError(f"unterminated quoted local part in {text[:60]!r}")
 
 
 def _check_dot_atom(text: str, what: str) -> None:
@@ -34,10 +34,10 @@ def _check_dot_atom(text: str, what: str) -> None:
         raise MailtoError(f"empty {what}")
     for atom in text.split("."):
         if not atom:
-            raise MailtoError(f"empty dot-separated part in {what} {text!r}")
+            raise MailtoError(f"empty dot-separated part in {what} {text[:60]!r}")
         for char in atom:
             if not is_atext(char):
-                raise MailtoError(f"character {char!r} not allowed in {what} {text!r}")
+                raise MailtoError(f"character {char!r} not allowed in {what} {text[:60]!r}")
 
 
 def split_address(text: str) -> tuple[str, str]:
@@ -48,18 +48,20 @@ def split_address(text: str) -> tuple[str, str]:
         end = _quoted_end(text)
         local, rest = text[:end], text[end:]
         if not rest.startswith("@"):
-            raise MailtoError(f"expected '@' after the quoted local part of {text!r}")
+            raise MailtoError(f"expected '@' after the quoted local part of {text[:60]!r}")
     else:
         at = text.find("@")
         if at < 0:
-            raise MailtoError(f"missing '@' in address {text!r}")
+            raise MailtoError(f"missing '@' in address {text[:60]!r}")
         local, rest = text[:at], text[at:]
         _check_dot_atom(local, "local part")
     domain = rest[1:]
     if domain.startswith("[") and domain.endswith("]") and len(domain) >= 2:
         for char in domain[1:-1]:
             if char not in DTEXT:
-                raise MailtoError(f"character {char!r} not allowed in domain literal {domain!r}")
+                raise MailtoError(
+                    f"character {char!r} not allowed in domain literal {domain[:60]!r}"
+                )
     else:
         _check_dot_atom(domain, "domain")
     return local, domain

@@ -74,7 +74,7 @@ def _header_pairs(headers: Headers) -> list[tuple[str, str]]:
         key = name.lower()
         if key in DEDICATED:
             raise MailtoError(f"pass {key!r} through its own argument, not headers")
-        if is_ignored(key):
+        if is_ignored(name):
             raise MailtoError(f"RFC 6068 section 3 says clients MUST ignore {name!r}")
         if key in seen:
             raise MailtoError(f"header {name!r} given twice")

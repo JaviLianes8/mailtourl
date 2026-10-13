@@ -11,8 +11,6 @@ from ._strict import check_address, check_body, check_name, check_raw, check_tex
 
 _SCHEME = "mailto:"
 _C0_OR_SPACE = "".join(chr(code) for code in range(0x21))
-_PATH_CHARS = PCHAR - {","}
-_FIELD_CHARS = QCHAR - {","}
 
 
 class _Reader:
@@ -62,7 +60,7 @@ class _Reader:
                 raise MailtoError(f"header field {name!r} repeated", offset)
             self.seen.add(key)
         if key in RECIPIENTS:
-            self.addresses(key, raw_value, value_at, _FIELD_CHARS)
+            self.addresses(key, raw_value, value_at, QCHAR)
             return
         if self.strict:
             check_raw(raw_value, QCHAR, value_at, f"{name} value")
@@ -100,7 +98,7 @@ def _read(text: str, strict: bool) -> Mailto:
         raise MailtoError("a mailto: URI takes no fragment", start + len(hier))
     path, question, query = hier.partition("?")
     reader = _Reader(strict)
-    reader.addresses("to", path, start, _PATH_CHARS)
+    reader.addresses("to", path, start, PCHAR)
     if question:
         offset = start + len(path) + 1
         for segment in query.split("&"):

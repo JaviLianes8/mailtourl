@@ -5,7 +5,7 @@ from __future__ import annotations
 from urllib.parse import quote, unquote, unquote_to_bytes
 
 from ._address import split_address
-from ._chars import ADDRESS_SAFE, FIELD_SAFE, HEX
+from ._chars import ADDRESS_SAFE, FIELD_SAFE, HEX, UNRESERVED
 from ._errors import MailtoError
 
 
@@ -24,6 +24,13 @@ def encode_field(value: str) -> str:
 def encode_address(address: str) -> str:
     """Percent-encode one validated address; "@" is encoded inside the local part."""
     local, domain = split_address(address)
+    if not domain.startswith("["):
+        # RFC 6068 allows percent-encoding in a domain name only for UTF-8, so an ASCII
+        # character that must be encoded somewhere ("&" and "=" in a cc or bcc field) has
+        # no valid spelling there.
+        for char in domain:
+            if ord(char) < 0x80 and char not in UNRESERVED and char not in ADDRESS_SAFE:
+                raise MailtoError(f"{char!r} cannot be written in a domain name")
     return f"{_quote(local, ADDRESS_SAFE)}@{_quote(domain, ADDRESS_SAFE)}"
 
 

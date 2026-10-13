@@ -2,18 +2,18 @@
 
 Progress:
 - [x] Brainstorm ranked improvements (this file)
-- [ ] Pin the ground truth: RFC 6068 and its errata, RFC 3986, RFC 5322, RFC 6532, WHATWG URL
-- [ ] Typed, frozen, hashable model with ordered header pairs
-- [ ] Address grammar: RFC 5322 addr-spec as restricted by RFC 6068, UTF-8 per RFC 6532
-- [ ] Parser: browser preprocessing, fragment dropped, merge rules, injection guard
-- [ ] Strict mode with `MailtoError` offsets
-- [ ] Safe builder: canonical encoding, CRLF bodies, refused headers and controls
-- [ ] Header safety: `Mailto.safe()` drops what RFC 6068 section 3 and 4 call unsafe
-- [ ] Command line: parse to JSON, build from flags
-- [ ] Contracts: pinned sources, README examples, browser round trip, installed wheel
-- [ ] Docs and packaging: README, CHANGELOG, metadata, sdist contents
-- [ ] Gates: ruff format, ruff check, mypy --strict, pytest
-- [ ] Mutation run: removing guarded logic makes the suite fail
+- [x] Pin the ground truth: RFC 6068 and its errata, RFC 3986, RFC 5322, RFC 6532, WHATWG URL
+- [x] Typed, frozen, hashable model with ordered header pairs
+- [x] Address grammar: RFC 5322 addr-spec as restricted by RFC 6068, UTF-8 per RFC 6532
+- [x] Parser: browser preprocessing, fragment dropped, merge rules, injection guard
+- [x] Strict mode with `MailtoError` offsets
+- [x] Safe builder: canonical encoding, CRLF bodies, refused headers and controls
+- [x] Header safety: `Mailto.safe()` drops what RFC 6068 section 3 and 4 call unsafe
+- [x] Command line: parse to JSON, build from flags
+- [x] Contracts: pinned sources, README examples, browser round trip, installed wheel
+- [x] Docs and packaging: README, CHANGELOG, metadata, sdist contents
+- [x] Gates: ruff format, ruff check, mypy --strict, pytest
+- [x] Mutation run: removing guarded logic makes the suite fail
 - [ ] Independent review findings fixed with regression tests
 - [ ] Pull request opened, guard clean
 
@@ -111,3 +111,25 @@ sources below:
 - MIME encoded words (RFC 2047) in field values: they are passed through as text.
 - HTML escaping of `&` when a URI goes into markup: `html.escape` already does it.
 - Display names and groups: RFC 6068 allows only addr-spec.
+
+## Verification
+
+- Gates on CPython 3.13.2 (this PC), 3.14.6 and 3.14.2 (two other Windows machines,
+  fresh clones): `ruff format --check .`, `ruff check .`, `mypy --strict src` and
+  `pytest`. With `MAILTOURL_E2E=1` the installed-wheel test builds the wheel and sdist,
+  checks their contents (no planning notes, no fetched files, the manifest, the fetch
+  script and the entry point present), installs the wheel in a fresh venv and drives the
+  API, the `mailtourl` script and `python -m mailtourl` from an empty folder.
+- Without the fetched files their tests skip; without Node.js the browser comparison
+  skips; the rest of the suite passes either way.
+- A seeded random round trip builds 3000 values and reads each back with the strict and
+  the lenient parser.
+- Guarded logic was removed one piece at a time (123 mutations, no bytecode, caches
+  purged, a timeout per run, baseline green before and after). The first run left 13
+  alive. Two were equivalent because the comma is split off before the character check,
+  so the subtraction was removed; one (VCHAR versus space inside a quoted-pair) is
+  equivalent because WSP is accepted there anyway and was dropped. The other ten were
+  missing cases (a second hex digit, adjacent escapes, an escaped `~` in a domain, a raw
+  `@` inside a quoted local part, the unit separator, an upper-case ignored field, type
+  messages, a non-string `is_address` argument, a strict parse from standard input), now
+  in `tests/test_mutation_gaps.py`. The rerun leaves none alive.

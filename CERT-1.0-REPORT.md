@@ -32,7 +32,7 @@ Progress:
 | 7 | Real ground truth | PASS: see Ground truth |
 | 8 | Real e2e from the wheel | PASS: wheel installed in a throwaway venv, used from an empty folder, CLI by subprocess (script and `python -m`); no PyPI release to upgrade from |
 | 9 | Seeded fuzz, no crash, hang or blowup | PASS: see Fuzz and hostile input |
-| 10 | Supported Pythons | PASS: CPython 3.10.19, 3.11.5, 3.12.12, 3.13.2, 3.14.2, 3.14.2t; 3.8.20 and 3.9.25 refused by `requires-python` |
+| 10 | Supported Pythons | PASS at 2224141: CPython 3.10.19, 3.11.5, 3.12.12, 3.13.2, 3.14.2, 3.14.2t; 3.8.20 and 3.9.25 refused by `requires-python` |
 | 11 | README and `twine check` | PASS: `twine check --strict`, absolute links, badge, verified comparison |
 | 12 | Dated CHANGELOG section | PASS: 1.0.0, 2026-10-22 |
 | 13 | pyproject 1.0.0, Production/Stable | PASS |
@@ -69,7 +69,8 @@ Kept: `parse(uri, *, strict=False)`, `build(to=None, *, cc, bcc, subject, body, 
 offset=None)` with `reason` and `offset` (the first parameter was `message` until QA
 round 1, see below). Changed (all in CHANGELOG and GUIDE): the defects
 above. The GUIDE states what SemVer covers: names, signatures, defaults, `Mailto` fields,
-exception types, `reason`/`offset` and the CLI options, not message wording.
+exception types, `reason`/`offset` and the command line (options, the JSON that `parse`
+prints, exit statuses), not message wording.
 
 ## Ground truth (item 7)
 
@@ -101,8 +102,9 @@ Independent implementations run by the suite:
   tricky inputs read the same before and after the browser serialisation.
 - Perl `URI::mailto` (URI 5.34, perl 5.42.2 of Git for Windows): 3,000 seeded built URIs
   and 15 RFC style examples decode to the same fields. Its source shows it reads `+` as a
-  space outside the path, turns a path space into `+` and splits on `;`; the generator
-  avoids those three.
+  space outside the path, turns a path space into `+` and splits on `;`. The generator
+  avoids the last two; since QA round 2 it puts `+` in local parts (lens b B2-1), which
+  `build` must write as `%2B` in `cc` and `bcc` for Perl to agree.
 - Python `email.headerregistry.Address`: every ASCII address `is_address` accepts among
   30,000 seeded candidates (more than 1,000 accepted) splits into the same local part and
   domain.
@@ -115,18 +117,21 @@ single-line field, `safe()` keeps only addr-specs, strict results equal default 
 anything that rebuilds reads back strictly) and 8,000 random builder inputs (a strict,
 printable ASCII URI or `MailtoError`). `tests/test_hostile.py`: 20 error paths with 100,000
 character inputs stay under 300 characters; 18 shapes timed at 4,000 and 64,000 units grow
-linearly (bound 64x for 16x input). Free-threaded 3.14.2t runs the whole suite.
+linearly (bound 64x for 16x input). Free-threaded 3.14.2t runs the whole suite (at
+2224141, see QA round 2).
 
 ## Packaging, e2e and interpreters (items 8, 10, 13, 14)
 
-From a fresh clone of `release/1.0.0` at 5dd47a6 on this PC: wheel and sdist built,
+From a fresh clone of `release/1.0.0` at 2224141 on this PC (QA round 2; first run at
+5dd47a6): wheel and sdist built,
 `twine check --strict` PASSED for both. Wheel: the package, `py.typed`, METADATA,
 entry point, `licenses/LICENSE`; no tests or scripts. Sdist: sources, tests,
 `tests/upstream/MANIFEST.json` only (no fetched file), README, GUIDE, CHANGELOG,
 CONTRIBUTING, LICENSE, scripts; no `IMPROVEMENTS-round*` or `CERT-1.0-*`. The sdist test
-suite, with `src` removed so it imports the installed wheel, passed 471, skipped 1 (the
-opt-in e2e) on each of CPython 3.10.19, 3.11.5, 3.12.12, 3.13.2, 3.14.2 and 3.14.2t, with
-the fetched sources, Node.js and Perl present. 3.8.20 and 3.9.25 refuse the wheel. The e2e
+suite, with `src` removed so it imports the installed wheel, passed 657, skipped 1 (the
+opt-in e2e), and the sdist tree with `MAILTOURL_E2E=1` passed 669, none skipped, on each
+of CPython 3.10.19, 3.11.5, 3.12.12, 3.13.2, 3.14.2 and 3.14.2t, with the fetched
+sources, Node.js and Perl present. 3.8.20 and 3.9.25 refuse the wheel. The e2e
 test (`MAILTOURL_E2E=1`) builds, checks metadata (Production/Stable, no runtime
 requirement), runs the doctests of the installed package and drives the CLI.
 
@@ -217,7 +222,7 @@ commits: 7c6da55 (code and tests), 1e47fbc (docs), ab4ddb5 (installed-package e2
 | c | C-1 | medium | CLI traceback on stdin bytes that are not UTF-8 | stdin read as bytes and decoded as UTF-8; failure is `MailtoError`, exit 2 |
 | c | C-2 | low | Windows stdin decoded with the code page | same fix; in-process tests with cp1252 and ASCII text streams, a subprocess test and the installed-wheel e2e |
 | c | C-4 | low | `build` trusted `str` subclasses | `build`, `parse`, `is_address` coerce with `str.__str__` (`_chars.plain`); `test_build_reads_a_str_subclass_as_plain_str` |
-| c | C-5 | low | default mode used about 50x the input in memory | no per-character index list: cleaning with one regex pass, index mapped back only on error. Peaks now 3.0x (subject), 7.5x (recipients), against strict 5.0x and 11.2x; the 21.6x for a body of `%41` is `urllib.parse.unquote_to_bytes` itself, equal in both modes; pinned by two tracemalloc tests |
+| c | C-5 | low | default mode used about 50x the input in memory | no per-character index list: cleaning with one regex pass, index mapped back only on error. Peaks now 3.0x (subject), 7.5x (recipients), against strict 5.0x and 11.2x; the peak for a body of `%41` is `urllib.parse.unquote_to_bytes` itself, equal in both modes (78.2x on 3.10.19 and 3.11.5, 21.6x on 3.12.12 to 3.14.2, 27.0x on 3.14.2t; round 2 d F3); pinned by two tracemalloc tests |
 | d | F1 | medium | same as c C-1/C-2, BOM refused | BOM skipped; e2e pipes UTF-8 and a BOM-prefixed URI into the installed script and `python -m` |
 | e | F1, F2 | medium, low | offsets after bytes that are not UTF-8; the end-of-input remap branch | as b F1; the branch is gone (only blank input maps to 0, pinned by `test_blank_input_reports_offset_zero`) |
 | e | F3 to F8 | medium, low | survivors C13, B5, W17, W33, E3, E1, W14 | one contract each in `tests/test_api_freeze.py` and `tests/test_cli_stdin.py` |
@@ -249,10 +254,75 @@ venv, fetched sources, Node.js, Perl and `MAILTOURL_E2E=1`: `ruff format --check
 none skipped) each exit 0. The decoder mapping and the offset injection check also ran
 clean on CPython 3.10.19, 3.11.5, 3.12.12 and 3.14.2t on this PC.
 
+### Round 2 (QA lenses a to e on 78646da)
+
+Every finding was fixed; none is disputed. Each behaviour bug got a contract test first,
+run against 78646da to see it fail, then the fix: of the new and changed cases
+(`tests/test_first_offender.py`, `tests/test_cli_streams.py`,
+`tests/test_plus_and_pairs.py`, the memory case in `tests/test_api_freeze.py`, `+` in
+the Perl generator of `tests/test_oracles.py`, `tests/test_roundtrip.py` and the
+updated offsets of `tests/test_strict.py`), 69 fail on 78646da; those that pass there
+are lens e's mutation-gap contracts, right on both trees by design, and unchanged cases.
+Fix commits: f58e53b (code and tests), 2224141 (README, GUIDE, CHANGELOG).
+
+| Lens | Id | Severity | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| a | F1 | medium | strict offset of a malformed address or field name pointed at its start; the GUIDE example contradicted the rule | fixed in code (also b B2-3): `split_address` raises with the index of the fault, mapped back through the escapes; field names report their first bad character; the GUIDE example now prints 8 |
+| b | B2-3 | low | same as a F1, seven more shapes | as a F1; the seven shapes are pinned in `tests/test_first_offender.py`; 19 offsets of `tests/test_strict.py` moved from the start of the part to the character |
+| b | B2-2 | low | when a part breaks several rules, the first rule checked won, not the first offender in the text (fragment, raw characters, escapes, missing `=`) | strict mode runs every rule of a part (raw characters and escapes in one pass, UTF-8, injection, controls, address, field name, missing `=`) and raises the error with the lowest offset (on a tie, the raw-character rule); the fragment is checked after the parts; the address check takes the lowest of its grammar, the encoded `@` and an ASCII escape in the domain |
+| a | F2 | low | `--safe` help described less than `Mailto.safe()` does | help: "apply Mailto.safe(): keep only what is safe in general and to_uri writes", pinned |
+| a | F3 | low | GUIDE and CHANGELOG named different command line promises | both say: the options, the JSON `parse` prints (keys, list shapes, ASCII) and the exit statuses (0, 2) follow SemVer |
+| a | F4 | low | README said "controls" for C0 controls | "C0 controls" in both places |
+| a | F5 | low | `safe(allow=None)` silently kept no header; the `str` case undocumented | `None` raises `TypeError`; docstring and GUIDE say `allow` is one name as a `str` or an iterable of names; CHANGELOG |
+| b | B2-1 | medium | `build` left `+` raw in `cc` and `bcc` addresses, which Perl `URI::mailto` and `parse_qsl` read as a space | `+` written as `%2B` in query addresses; a domain name cannot hold it either way (RFC 6068 allows no ASCII escape there), so `is_address` refuses a `+` in a domain name, as it already did `&` and `=`; the Perl differential now includes `+`, the round trip asserts no raw `+` in the query, `parse_qsl` contract |
+| b | B2-4 | low | docs said controls are refused only outside the body | README (two places), `build` docstring and GUIDE strict list: C0 and C1 controls but tab are refused in every field; the body also takes CRLF line breaks |
+| c | F1 | low | traceback and exit 1 with no standard input or output | exit 2 with "no standard input" or "no standard output"; without standard error the reason never falls back to standard output; four contracts |
+| c | F2 | low | the `--header` error echoed the argument, value included; strict `parse` and `build` quoted a malformed field name whole | "--header expects NAME=VALUE" without the argument; a field name is reported by the character at fault in `build` and strict `parse` (`_headers.name_fault`) |
+| c | F3 | low | `build` and `Mailto` read a lying pair differently, `Mailto` raised `ValueError` | both read the pair from what the tuple or list holds (`_headers.read_pair`), only `TypeError`; contracts with tuple and list subclasses that lie in `__iter__`, `__getitem__` and `__len__` |
+| d | F1 | medium | the `tabs` memory contract failed on free-threaded 3.14.2t (16.96x the input) | the browser cleaning uses `str.replace` instead of a regex substitution and its list of pieces: 2.00x on 3.10.19, 3.11.5, 3.12.12, 3.13.2, 3.14.2 and 3.14.2t (was 9.95x and 16.96x); new contract below 4x for tab, LF and CRLF; full suite green on 3.14.2t (below) |
+| d | F2 | low | the interpreter claims of this report described 5dd47a6 | matrix rerun at 2224141; sections Packaging and Fuzz updated |
+| d | F3 | low | the 21.6x of round 1 C-5 holds only on 3.12 and later | the C-5 row names the interpreters: 78.2x on 3.10.19 and 3.11.5, 21.6x on 3.12.12, 3.13.2 and 3.14.2, 27.0x on 3.14.2t, equal in both modes on each |
+| e | R2-1, R2-2 | low | survivors N4, N10: UTF-8 lead boundaries C0, C1 and F5 to F7 | lenient offset contracts, killed |
+| e | R2-3 | low | survivor N35: strict body offsets through escapes | contracts, killed |
+| e | R2-4 | low | survivor N39: a removed tab or newline right before the problem | contracts, killed |
+| e | R2-5 | low | survivor N74: byte number after a BOM | "at byte 19" contract, killed |
+| e | R2-6 | low | survivor N79: an empty URI argument replaced by stdin | contract, killed |
+| e | R2-equiv | low | M10, P19, L7, N18 equivalent | M10, P19 and L7 stay equivalent as proved; the `position` fallback of N18 is now reachable (an unterminated quoted local part reports the end of the address) and N18 is killed |
+
+Mutants applied to the fixed tree, one at a time:
+
+| Mutant | Result |
+| --- | --- |
+| N4, N10 (lens e) | killed: `test_lenient_offsets_count_what_was_decoded_or_removed` |
+| N35 (lens e) | killed: `test_strict_points_at_the_first_offending_character[mailto:?body=%41%00-16]` |
+| N39 (lens e) | killed: `test_lenient_offsets_count_what_was_decoded_or_removed` (tab before `%0A`) |
+| N74 (lens e) | killed: `test_the_bad_byte_is_counted_from_the_start_of_the_input_bom_included` |
+| N79 (lens e) | killed: `test_an_empty_uri_argument_is_parsed_not_replaced_by_stdin` |
+| N18 (lens e), and the fallback off by one | killed: `test_strict_points_at_the_first_offending_character[mailto:%22ab@x.example-22]` |
+| `read_part` raises the first rule's error | killed: `[mailto:a@x.example?subject=%FF<-27]` |
+| `check_address` raises the first rule's error | killed: `[mailto:a@x%2E%2Eexample-10]` |
+| address errors at the start of the address | killed: `[mailto:j%20d@x.example-8]` |
+| `_separator` skips one character after a backslash | killed: `test_random_values_round_trip_through_build_and_both_parsers` |
+| missing `@` at offset 0; literal and trailing-dot offsets off by one | killed: `[mailto:abc-10]`, `[mailto:a@%5B1.2%5Cx%5D-15]`, `[mailto:a.@x.example-9]` |
+| `read_pair` iterates the tuple or the list, or trusts `len` | killed: `test_build_and_mailto_read_a_pair_from_what_it_holds[pair0]` and `[pair2]`, `test_a_pair_that_lies_about_its_length_is_a_type_error_in_both` |
+| `+` raw in query addresses (two ways); `+` allowed in a domain name | killed: `test_a_plus_in_a_cc_or_bcc_address_is_encoded`, `test_a_plus_in_a_domain_name_cannot_be_written` |
+| CR left in the cleaned text | killed: `test_removing_tabs_and_newlines_costs_at_most_a_copy[crlf]` |
+| no stdin, stdout or stderr check in the command | killed: `test_no_standard_input_exits_2_with_one_line`, `test_no_standard_output_exits_2_with_one_line`, `test_without_standard_error_the_reason_never_lands_on_standard_output` |
+| `safe(allow=None)` accepted | killed: `test_safe_takes_no_none_for_its_allow_list` |
+| the missing `=` error listed before the name rules | equivalent: it sits at the end of the segment, after every other error of the name |
+
+Gates at 2224141 from a fresh clone of the pushed branch on this PC (the interpreters
+live only here; turn `pc/5`): wheel and sdist built, `twine check --strict` passed. On
+each of CPython 3.10.19, 3.11.5, 3.12.12, 3.13.2, 3.14.2 and 3.14.2t, the sdist tree
+with the fetched sources, Node.js, Perl and `MAILTOURL_E2E=1` passed 669 (none skipped),
+and the suite against the installed wheel (`src` removed) passed 657, skipped 1 (the
+opt-in e2e). `ruff format --check .`, `ruff check .`, `mypy --strict src` and
+`mypy --strict src tests` exit 0 at the same commit.
+
 ### Disputed findings
 
 None.
 
 ### Pending
 
-Re-verification of round 1 by each lens, then the independent review (item 16).
+Re-verification of round 2 by each lens, then the independent review (item 16).

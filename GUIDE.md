@@ -80,7 +80,8 @@ for uri in ("mailto:a@x.example?subject=a%0Db", "mailto:a%0A@x.example", "mailto
   for an escape, the `%` that starts it; for something missing (an `@`, a closing quote,
   a closing `]`, a part after a dot, an `=`), the place where it is missing. When the text breaks
   several rules, the offset is that of the first offending character in the text,
-  inside an address or a field name too. Default-mode offsets point the same way, after
+  inside an address or a field name too, and bytes that are not UTF-8 do not hide a
+  problem before them in the same part. Default-mode offsets point the same way, after
   bytes that are not UTF-8 too.
 
 ```python

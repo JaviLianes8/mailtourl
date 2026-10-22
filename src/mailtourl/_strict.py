@@ -6,7 +6,7 @@ from collections.abc import Callable, Collection, Sequence
 
 from ._address import split_address
 from ._chars import HEX, LINE_BREAKS, is_control
-from ._codec import decode_strict
+from ._codec import decode, decode_strict
 from ._errors import MailtoError
 from ._headers import name_fault
 from ._positions import position
@@ -45,7 +45,9 @@ def read_part(
 
     Every rule is checked and the error found first in the text is raised (on a tie, the
     first rule listed: raw characters, UTF-8, then ``checks``, then ``also``), so the
-    offset is always that of the first offending character.
+    offset is always that of the first offending character. When the bytes are not
+    UTF-8, ``checks`` read the value with each bad part replaced and only what they find
+    before the first bad byte counts.
     """
     errors: list[MailtoError] = []
     try:
@@ -57,17 +59,28 @@ def read_part(
         value = decode_strict(raw, offset)
     except MailtoError as error:
         errors.append(error)
+        # The checks still read the text before the bad byte (each bad part as one U+FFFD),
+        # so the bytes cannot hide an earlier problem; a tie goes to the UTF-8 error.
+        bad = error.offset or 0
+        found = _run(checks, decode(raw), raw, offset)
+        errors.extend(early for early in found if (early.offset or 0) < bad)
     else:
-        for check in checks:
-            try:
-                check(value, raw, offset)
-            except MailtoError as error:
-                errors.append(error)
+        errors.extend(_run(checks, value, raw, offset))
     if also is not None:
         errors.append(also)
     if errors:
         raise min(errors, key=lambda error: error.offset or 0)
     return value
+
+
+def _run(checks: Sequence[Check], value: str, raw: str, offset: int) -> list[MailtoError]:
+    found: list[MailtoError] = []
+    for check in checks:
+        try:
+            check(value, raw, offset)
+        except MailtoError as error:
+            found.append(error)
+    return found
 
 
 def check_name(name: str, raw: str, offset: int) -> None:

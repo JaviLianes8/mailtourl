@@ -26,6 +26,9 @@ STRICT = [
     ("mailto:?cc=a@%5B192.0.2.1", 25),
     ("mailto:a@%5B192.0.2.1%5Dx", 24),
     ("mailto:a@%5B1.2.3.4%5D%5D", 22),
+    ("mailto:a@%5B", 12),
+    ("mailto:a@%5B1.2%20", 15),
+    ("mailto:a@%5B1.2%09", 15),
     ("mailto:ab%3C", 9),
     ("mailto:ab%20", 9),
     ("mailto:a.b%3C", 10),
@@ -47,6 +50,17 @@ STRICT = [
     ("mailto:a@x%2E%2Eexample", 10),
     ("mailto:a@x.example?body=%01<", 24),
     ("mailto:a%0A<@x.example", 8),
+    # Bytes that are not UTF-8 do not hide an earlier problem in the same part.
+    ("mailto:a@%5B1%5Dx%FF", 16),
+    ("mailto:a@%5B%5Dz%FF", 15),
+    ("mailto:a@%5B1%20%FF%5D", 13),
+    ("mailto:a@%5B%E2%80%8B%FF%5D", 12),
+    ("mailto:a%20b@x%FF", 8),
+    ("mailto:?subject=a%01%FF", 17),
+    ("mailto:?subject=%0A%FF", 16),
+    ("mailto:?body=%0A%FF", 13),
+    ("mailto:?X%20Y%FF=1", 9),
+    ("mailto:a@%5B1%FF", 13),
     # Strict body offsets skip the escapes before the problem.
     ("mailto:?body=%41%00", 16),
     ("mailto:?body=caf%C3%A9%0A", 22),
@@ -58,6 +72,33 @@ def test_strict_points_at_the_first_offending_character(uri: str, offset: int) -
     with pytest.raises(MailtoError) as caught:
         parse(uri, strict=True)
     assert caught.value.offset == offset, caught.value.reason
+
+
+UTF8_HIDES = [
+    ("mailto:a@%5B1%5Dx%FF", "text after the domain literal"),
+    ("mailto:a@%5B1%20%FF%5D", "character ' ' not allowed in domain literal"),
+    ("mailto:a@%5B%E2%80%8B%FF%5D", "not allowed in domain literal"),
+    ("mailto:a%20b@x%FF", "character ' ' not allowed in local part"),
+    ("mailto:?subject=a%01%FF", "control character"),
+    ("mailto:?subject=%0A%FF", "header injection"),
+    ("mailto:?body=%0A%FF", "body line break"),
+    ("mailto:?X%20Y%FF=1", "header field name"),
+]
+
+
+@pytest.mark.parametrize(("uri", "reason"), UTF8_HIDES)
+def test_bytes_that_are_not_utf8_do_not_hide_an_earlier_problem(uri: str, reason: str) -> None:
+    with pytest.raises(MailtoError, match=reason):
+        parse(uri, strict=True)
+
+
+@pytest.mark.parametrize(
+    "uri", ["mailto:a@%5B1%FF", "mailto:abc%FF", "mailto:a.%FF@x", "mailto:?X%FF=1", "mailto:%FF"]
+)
+def test_bytes_that_are_not_utf8_win_a_tie_with_what_they_cut_short(uri: str) -> None:
+    with pytest.raises(MailtoError, match="not UTF-8") as caught:
+        parse(uri, strict=True)
+    assert caught.value.offset == uri.index("%FF")
 
 
 def test_the_raw_character_rule_wins_a_tie() -> None:

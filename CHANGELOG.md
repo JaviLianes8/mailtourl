@@ -94,7 +94,9 @@ before this one was published to PyPI. What is stable:
   where it starts; it now points at the character at fault (for something missing, such
   as the `@`, where it is missing). When a part breaks several rules, the offset is that
   of the first one in the text: a fragment, a raw character, a broken escape or bytes
-  that are not UTF-8 no longer hide an earlier problem.
+  that are not UTF-8 no longer hide an earlier problem. Bytes that are not UTF-8 skipped
+  every check of the address, field name or value that held them, so a later bad byte
+  was reported in place of the first offending character before it.
 - A domain literal missing its closing `]` ("unterminated domain literal") or followed
   by more text ("text after the domain literal") is reported where the `]` is due or at
   the first character after it, in strict `parse` and in `build`; it was reported at the

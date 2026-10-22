@@ -83,7 +83,9 @@ def test_installed_wheel_end_to_end(tmp_path: Path) -> None:
     assert "mailtourl = mailtourl._cli:main" in zipfile.ZipFile(wheel).read(entry_points).decode()
     metadata = zipfile.ZipFile(wheel).read(f"{dist_info}/METADATA").decode()
     assert "Classifier: Development Status :: 5 - Production/Stable" in metadata
-    assert "Requires-Dist" not in metadata and "Requires-Python: >=3.10" in metadata
+    requires = [line for line in metadata.splitlines() if line.startswith("Requires-Dist:")]
+    assert all("extra == 'dev'" in line for line in requires), requires
+    assert "Requires-Python: >=3.10" in metadata
     checked = _run(sys.executable, "-m", "twine", "check", "--strict", wheel, sdist)
     assert checked.returncode == 0, checked.stdout + checked.stderr
     listing = _run(sys.executable, "-m", "tarfile", "-l", sdist).stdout.decode()

@@ -75,7 +75,7 @@ INVALID = [
     ("mailto:%22a%01%22@x.example", 11, "quoted local part"),
     ("mailto:a(comment)@x.example", 8, "not allowed in local part"),
     ("mailto:a@ex%61mple.com", 11, "domain"),
-    ("mailto:a@%5B1.2.3.4", 9, "domain"),
+    ("mailto:a@%5B1.2.3.4", 19, "unterminated domain literal"),
     ("mailto:a@%5Bx%5Cy%5D", 13, "domain literal"),
     ("mailto:a@%5B%C3%A9%5D", 12, "domain literal"),
 ]

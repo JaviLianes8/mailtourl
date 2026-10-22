@@ -95,6 +95,10 @@ before this one was published to PyPI. What is stable:
   as the `@`, where it is missing). When a part breaks several rules, the offset is that
   of the first one in the text: a fragment, a raw character, a broken escape or bytes
   that are not UTF-8 no longer hide an earlier problem.
+- A domain literal missing its closing `]` ("unterminated domain literal") or followed
+  by more text ("text after the domain literal") is reported where the `]` is due or at
+  the first character after it, in strict `parse` and in `build`; it was reported at the
+  opening `[` as a character not allowed in a domain name.
 
 ### Added
 

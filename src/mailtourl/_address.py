@@ -64,15 +64,25 @@ def split_address(text: str) -> tuple[str, str]:
             raise MailtoError(f"missing '@' in address {quoted(text)}", len(text))
     start = len(local) + 1
     domain = text[start:]
-    if domain.startswith("[") and domain.endswith("]") and len(domain) >= 2:
-        for index, char in enumerate(domain[1:-1], start + 1):
-            if char not in DTEXT:
-                raise MailtoError(
-                    f"character {char!r} not allowed in domain literal {quoted(domain)}", index
-                )
+    if domain.startswith("["):
+        _check_literal(domain, start)
     else:
         _check_dot_atom(domain, "domain", start)
     return local, domain
+
+
+def _check_literal(domain: str, start: int) -> None:
+    """Check a domain literal, raising at the first offending character or where "]" is due."""
+    for index, char in enumerate(domain[1:], 1):
+        if char == "]":
+            if index + 1 < len(domain):
+                reason = f"text after the domain literal in {quoted(domain)}"
+                raise MailtoError(reason, start + index + 1)
+            return
+        if char not in DTEXT:
+            reason = f"character {char!r} not allowed in domain literal {quoted(domain)}"
+            raise MailtoError(reason, start + index)
+    raise MailtoError(f"unterminated domain literal {quoted(domain)}", start + len(domain))
 
 
 def check_domain(domain: str) -> None:

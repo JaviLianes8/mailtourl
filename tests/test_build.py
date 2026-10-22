@@ -59,6 +59,21 @@ def test_a_domain_literal_has_its_brackets_encoded() -> None:
     assert build("a@[192.0.2.1]") == "mailto:a@%5B192.0.2.1%5D"
 
 
+@pytest.mark.parametrize(
+    ("address", "reason"),
+    [
+        ("a@[192.0.2.1", "unterminated domain literal"),
+        ("a@[192.0.2.1]x", "text after the domain literal"),
+        ("a@[1.2.3.4]]", "text after the domain literal"),
+    ],
+)
+def test_a_broken_domain_literal_is_named_as_such(address: str, reason: str) -> None:
+    assert not is_address(address)
+    with pytest.raises(MailtoError, match=reason) as caught:
+        build(address)
+    assert "'['" not in caught.value.reason
+
+
 @pytest.mark.parametrize("char", list("#%&/=?^`{|}"))
 def test_build_refuses_a_domain_char_that_would_need_an_ascii_escape(char: str) -> None:
     address = f"a@x{char}y.example"

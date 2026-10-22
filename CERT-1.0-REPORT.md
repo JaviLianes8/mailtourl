@@ -390,10 +390,45 @@ this PC; `pytest` from an archive of the commit on Elena's PC (turn `elena/2`), 
 3.14.2 in a fresh venv, fetched sources, Node.js, Perl and `MAILTOURL_E2E=1`: 709 tests, exit
 0, none skipped.
 
+### Round 5 (re-verification of round 4 by lens e on 8128ef4)
+
+Lens e re-verified R4-1 and R4-2 as fixed (Y2 and Y29 killed). Of its 25 new mutants on
+`read_part` and its check loop, 18 were killed (counting Y2 and Y29) and 9 survived: Z2
+(`< bad` to `<= bad`) and Z5 (the filter on the early errors removed) are equivalent, as
+a differential run on 6,013 seeded inputs showed, and the other 7 gave four findings, all
+mutation gaps with no behaviour change. Every finding was fixed; none is disputed. The new
+cases pass on 8128ef4, as mutation-gap contracts do.
+
+| Lens | Id | Severity | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| e | R5-F1 | low | survivor Z23: the checks skipped on a part with bad bytes whenever a raw character already failed | strict offset `mailto:a%20b<@x%FF` 8 |
+| e | R5-F2 | low | survivor Z25: only the first check's early error kept on a part with bad bytes | strict offset `mailto:a%20b%0A@x%FF` 8 |
+| e | R5-F3 | low | survivors Z10, Z12, Z14: the bad parts dropped, turned into a line feed, or the value cut at the first one before the checks read it | strict offsets `mailto:%22a%5C%FF` 14, `mailto:?body=%0D%FF` 13, `mailto:?body=%0D%FF%0A` 13 |
+| e | R5-F4 | low | survivors Z11, Z13: each bad part read as `?` or a backslash instead of U+FFFD, visible only in the value a reason quotes | `parse("mailto:.%FF", strict=True)` pinned to its reason, which quotes the local part as a dot and U+FFFD, and offset 7, as `read_part` and the GUIDE promise |
+
+Mutants applied to the fixed tree, one at a time, against `tests/test_first_offender.py`:
+
+| Mutant | Result |
+| --- | --- |
+| Z23 `found = [] if errors[:-1] else _run(...)` | killed: `[mailto:a%20b<@x%FF-8]` |
+| Z25 `for early in found[:1]` | killed: `[mailto:a%20b%0A@x%FF-8]` |
+| Z10 bad parts removed | killed: `[mailto:%22a%5C%FF-14]`, `[mailto:?body=%0D%FF%0A-13]`, the reason test |
+| Z11 bad parts as `?` | killed: `test_a_reason_quotes_a_bad_part_as_the_replacement_character` |
+| Z12 bad parts as a line feed | killed: `[mailto:%22a%5C%FF-14]`, `[mailto:?body=%0D%FF-13]`, `[mailto:?body=%0D%FF%0A-13]`, the reason test |
+| Z13 bad parts as a backslash | killed: `test_a_reason_quotes_a_bad_part_as_the_replacement_character` |
+| Z14 value cut at the first bad part | killed: `[mailto:%22a%5C%FF-14]`, the reason test |
+
+Fix commits: ec08bb3 and 34214c9, which writes the replacement character in the reason
+test as an escape (tests only; no behaviour change, so nothing new in the CHANGELOG).
+Gates at 34214c9: `ruff format --check .`, `ruff check .`, `mypy --strict src` and `mypy
+--strict src tests` exit 0 on this PC; `pytest` from an archive of the commit on Elena's
+PC (turn `elena/4`), CPython 3.14.2 in a fresh venv, fetched sources, Node.js, Perl and
+`MAILTOURL_E2E=1`: 715 tests, exit 0, none skipped.
+
 ### Disputed findings
 
 None.
 
 ### Pending
 
-Re-verification of round 4 by lenses c and e, then the independent review (item 16).
+Re-verification of round 5 by lens e, then the independent review (item 16).

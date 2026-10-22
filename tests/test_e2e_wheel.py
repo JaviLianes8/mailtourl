@@ -38,6 +38,11 @@ assert mail.to_uri() == uri and pickle.loads(pickle.dumps(mail)) == mail
 assert parse(" mailto:a@x.example?%62cc=s@e.example#f\n").bcc == ("s@e.example",)
 assert parse("mailto:?From=x@y.example&Keywords=k").safe().headers == (("Keywords", "k"),)
 assert build(body="a\nb") == "mailto:?body=a%0D%0Ab" and is_address("a@[192.0.2.1]")
+assert Mailto.__module__ == MailtoError.__module__ == "mailtourl"
+import doctest, mailtourl._address, mailtourl._build, mailtourl._errors, mailtourl._parse
+for module in (mailtourl, mailtourl._address, mailtourl._build, mailtourl._parse):
+    found = doctest.testmod(module)
+    assert found.failed == 0 and found.attempted > 0, (module, found)
 for call in (
     lambda: parse("mailto:a@x.example?subject=a%0D%0ABcc:x@y.example"),
     lambda: parse("mailto:a@x.example#f", strict=True),
@@ -71,10 +76,20 @@ def test_installed_wheel_end_to_end(tmp_path: Path) -> None:
     names = zipfile.ZipFile(wheel).namelist()
     assert "mailtourl/py.typed" in names
     assert not any(name.startswith(("tests/", "scripts/")) for name in names)
+    dist_info = wheel.name.split("-py3-")[0] + ".dist-info"
+    assert {name.split("/")[0] for name in names} == {"mailtourl", dist_info}
+    assert f"{dist_info}/licenses/LICENSE" in names
     entry_points = next(name for name in names if name.endswith("entry_points.txt"))
     assert "mailtourl = mailtourl._cli:main" in zipfile.ZipFile(wheel).read(entry_points).decode()
+    metadata = zipfile.ZipFile(wheel).read(f"{dist_info}/METADATA").decode()
+    assert "Classifier: Development Status :: 5 - Production/Stable" in metadata
+    assert "Requires-Dist" not in metadata and "Requires-Python: >=3.10" in metadata
+    checked = _run(sys.executable, "-m", "twine", "check", "--strict", wheel, sdist)
+    assert checked.returncode == 0, checked.stdout + checked.stderr
     listing = _run(sys.executable, "-m", "tarfile", "-l", sdist).stdout.decode()
-    assert "IMPROVEMENTS-round" not in listing
+    assert "IMPROVEMENTS-round" not in listing and "CERT-1.0" not in listing
+    for shipped in ("LICENSE", "README.md", "GUIDE.md", "CHANGELOG.md", "src/mailtourl/py.typed"):
+        assert shipped in listing, shipped
     assert "tests/upstream/MANIFEST.json" in listing
     for fetched in ("rfc6068.txt", "rfc3986.txt", "rfc5322.txt", "rfc6532.txt", "url.bs"):
         assert fetched not in listing, fetched

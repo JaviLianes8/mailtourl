@@ -1,5 +1,7 @@
 # mailtourl
 
+[![Lianes8 Certified](https://lianes8studio.com/certified/lianes8-certified-badge.svg)](https://lianes8studio.com/certified)
+
 Parse, validate and safely build `mailto:` URIs per RFC 6068.
 
 - Reads a link the way a browser hands it to the mail client, or checks it against the
@@ -10,6 +12,11 @@ Parse, validate and safely build `mailto:` URIs per RFC 6068.
 - Builds URIs that pass through a browser unchanged, with every field encoded and body
   line breaks written as `%0D%0A`.
 - Typed, frozen values, no dependencies, a command line for scripts.
+
+The [guide](https://github.com/JaviLianes8/mailtourl/blob/main/GUIDE.md) describes every
+public name in detail; the
+[changelog](https://github.com/JaviLianes8/mailtourl/blob/main/CHANGELOG.md) lists what
+changed in each release. From 1.0.0 the public API follows Semantic Versioning.
 
 ## Install
 
@@ -144,9 +151,10 @@ mailtourl` works the same way.
 ## Standards
 
 RFC 6068 (with verified errata 7919 and 4020), RFC 3986, RFC 5322, RFC 6532 and the
-WHATWG URL Standard. The tests read the RFC examples and grammar from pinned copies
-(`python scripts/fetch_upstream.py` fetches them; `tests/upstream/MANIFEST.json` lists
-URL and sha256) and, when Node.js is installed, compare with its WHATWG `URL`.
+WHATWG URL Standard. The tests read the RFC examples and grammar from pinned copies of
+the published texts and compare the library with independent implementations: the
+WHATWG `URL` class of Node.js, Perl's `URI::mailto` and the address parser of Python's
+`email` package.
 
 Not covered: IDNA conversion (the standard library only has IDNA 2003, so domains stay
 UTF-8, which RFC 6068 allows), MIME encoded words (passed through as text) and display
@@ -154,16 +162,30 @@ names (RFC 6068 allows only addr-spec).
 
 ## Why
 
-The standard library does not model `mailto:` semantics: `urllib.parse` treats the
-whole address list as an opaque path and never reads the `to`, `cc`, `bcc`, `subject` or
-`body` fields, so the recipient split, the field encoding and the injection checks are
-left to the caller. Other languages ship this (`URI::MailTo` in Ruby, `swift-rfc-6068`,
-the Android `MailTo` class), but Python has no maintained equivalent. `mailtourl` fills
-that gap with a small, typed, zero-dependency codec.
+Python's standard library has no `mailto:` codec. `urllib.parse.urlsplit` returns the
+whole address list as one opaque path, and `urllib.parse.parse_qsl` on the query reads
+`+` as a space and hands a percent-encoded line break back as is:
+`parse_qsl("subject=1+1%0D%0ABcc:%20spy@evil.example")` gives
+`[('subject', '1 1\r\nBcc: spy@evil.example')]`, a second header line waiting to be
+copied into a message. Of the packages on PyPI whose names contain "mailto" (checked on
+2026-10-22), `mailto-uri` (1.2.0, released in 2019) only builds URIs and leaves the
+addresses unencoded; the others send mail or render links, and none parses a URI.
+Other languages ship this: Ruby's `URI::MailTo`, Perl's `URI::mailto`, Android's
+`android.net.MailTo` and Swift's `swift-rfc-6068`. `mailtourl` is a small, typed,
+zero-dependency codec that reads like a browser, validates like the RFC and refuses
+header injection in both directions.
+
+## Development
+
+`python scripts/fetch_upstream.py` downloads the RFCs and the URL Standard source listed
+in `tests/upstream/MANIFEST.json` (they are not part of the repository; their tests skip
+without them). The comparisons with Node.js and Perl run when `node`, and `perl` with the
+URI module, are on PATH. `scripts/check.ps1` runs format, lint, types and tests. Set
+`MAILTOURL_E2E=1` to also build the wheel and test the installed package.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/JaviLianes8/mailtourl/blob/main/LICENSE).
 
 ## Links
 

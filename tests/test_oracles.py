@@ -78,7 +78,7 @@ def _as_mailto(fields: list[tuple[str, str]]) -> Mailto:
     )
 
 
-ATEXT = "abcXYZ019!#$%&'*-/=?^_`{|}~é納"
+ATEXT = "abcXYZ019!#$%&'*+-/=?^_`{|}~é納"
 # Domain atoms hold only what a URI can carry raw or as UTF-8 (see build), less "+".
 DOMAIN = "abcXYZ019-!$'*é納"
 TEXT = "aZ9 -._~!$&'()*,=:@/?#[]%\"<>\\^`{|}\té納\U0001f600\r\n"

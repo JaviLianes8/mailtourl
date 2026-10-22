@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import re
+from functools import partial
 
 from ._chars import FTEXT, PCHAR, QCHAR, plain
 from ._codec import decode
 from ._errors import MailtoError, quoted
 from ._headers import RECIPIENTS
 from ._model import Mailto
-from ._strict import check_address, check_body, check_name, check_raw, check_text, guard
+from ._strict import (
+    Check,
+    check_address,
+    check_body,
+    check_name,
+    check_text,
+    guard,
+    read_part,
+)
 
 _SCHEME = "mailto:"
 _C0_OR_SPACE = "".join(chr(code) for code in range(0x21))
@@ -29,14 +38,14 @@ class _Reader:
     def addresses(self, key: str, raw: str, offset: int, allowed: frozenset[str]) -> None:
         if not raw:
             return
+        what = f"{key} address"
         for part in raw.split(","):
             if self.strict:
-                check_raw(part, allowed, offset, f"{key} address")
-            address = decode(part, offset, strict=self.strict)
-            guard(address, part, f"{key} address", offset)
-            if self.strict:
-                check_address(address, part, offset)
+                checks = (partial(guard, what=what), check_address)
+                address = read_part(part, offset, allowed, what, checks)
             else:
+                address = decode(part)
+                guard(address, part, offset, what)
                 address = address.strip()
             if address:
                 self.recipients[key].append(address)
@@ -45,15 +54,15 @@ class _Reader:
     def field(self, segment: str, offset: int) -> None:
         raw_name, equals, raw_value = segment.partition("=")
         value_at = offset + len(raw_name) + 1
+        what = "header field name"
         if self.strict:
-            if not equals:
-                raise MailtoError("header field without '='", offset + len(segment))
-            check_raw(raw_name, QCHAR, offset, "header field name")
-        name = decode(raw_name, offset, strict=self.strict)
-        guard(name, raw_name, "header field name", offset)
-        if self.strict:
-            check_name(name, offset)
+            end = offset + len(segment)
+            missing = None if equals else MailtoError("header field without '='", end)
+            checks = (partial(guard, what=what), check_name)
+            name = read_part(raw_name, offset, QCHAR, what, checks, missing)
         else:
+            name = decode(raw_name)
+            guard(name, raw_name, offset, what)
             # Trimmed before it is classified, so " bcc" cannot hide a recipient, and a
             # name that is still not a field name ("Bcc:x", controls) is dropped.
             name = name.strip()
@@ -68,21 +77,30 @@ class _Reader:
         if key in RECIPIENTS:
             self.addresses(key, raw_value, value_at, QCHAR)
             return
-        if self.strict:
-            check_raw(raw_value, QCHAR, value_at, f"{shown} value")
-        value = decode(raw_value, value_at, strict=self.strict)
         if key == "body":
-            if self.strict:
-                check_body(value, raw_value, value_at)
+            value = self.value(raw_value, value_at, shown, body=True)
             self.body = value if self.body is None else self.body
             return
-        guard(value, raw_value, f"{shown} field", value_at)
-        if self.strict:
-            check_text(value, raw_value, f"{shown} field", value_at)
+        value = self.value(raw_value, value_at, shown, body=False)
         if key == "subject":
             self.subject = value if self.subject is None else self.subject
         else:
             self.headers.append((name, value))
+
+    def value(self, raw: str, offset: int, shown: str, *, body: bool) -> str:
+        """Decode a field value; outside the body, a line break is header injection."""
+        field = f"{shown} field"
+        if self.strict:
+            checks: tuple[Check, ...] = (
+                (check_body,)
+                if body
+                else (partial(guard, what=field), partial(check_text, what=field))
+            )
+            return read_part(raw, offset, QCHAR, f"{shown} value", checks)
+        value = decode(raw)
+        if not body:
+            guard(value, raw, offset, field)
+        return value
 
     def result(self) -> Mailto:
         return Mailto(
@@ -100,8 +118,6 @@ def _read(text: str, strict: bool) -> Mailto:
         raise MailtoError("not a mailto: URI", 0)
     start = len(_SCHEME)
     hier, hash_mark, _ = text[start:].partition("#")
-    if hash_mark and strict:
-        raise MailtoError("a mailto: URI takes no fragment", start + len(hier))
     path, question, query = hier.partition("?")
     reader = _Reader(strict)
     reader.addresses("to", path, start, PCHAR)
@@ -113,6 +129,9 @@ def _read(text: str, strict: bool) -> Mailto:
             elif strict:
                 raise MailtoError("empty header field", offset)
             offset += len(segment) + 1
+    # Checked last: whatever the part before it breaks comes first in the text.
+    if hash_mark and strict:
+        raise MailtoError("a mailto: URI takes no fragment", start + len(hier))
     return reader.result()
 
 
@@ -142,7 +161,8 @@ def parse(uri: str, *, strict: bool = False) -> Mailto:
     if strict:
         return _read(uri, strict=True)
     begin = len(uri) - len(uri.lstrip(_C0_OR_SPACE))
-    cleaned = _REMOVED.sub("", uri.strip(_C0_OR_SPACE))
+    # str.replace needs no list of pieces as a regex substitution does: a copy at most.
+    cleaned = uri.strip(_C0_OR_SPACE).replace("\t", "").replace("\n", "").replace("\r", "")
     try:
         return _read(cleaned, strict=False)
     except MailtoError as error:

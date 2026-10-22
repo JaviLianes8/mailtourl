@@ -76,13 +76,13 @@ def test_strict_refuses_a_raw_equals_sign_in_a_recipient_field(key: str) -> None
 
 
 def test_messages_quote_sixty_characters_whole_and_cut_sixty_one() -> None:
-    sixty, sixty_one = "a" * 59 + ":", "a" * 60 + ":"
+    sixty, sixty_one = "a" * 60, "a" * 61
     with pytest.raises(MailtoError) as caught:
-        build(headers=[(sixty, "v")])
-    assert str(caught.value) == f"{sixty!r} is not an RFC 5322 header field name"
+        build(headers=[(sixty, "1"), (sixty.upper(), "2")])
+    assert str(caught.value) == f"header {sixty.upper()!r} given twice"
     with pytest.raises(MailtoError) as caught:
-        build(headers=[(sixty_one, "v")])
-    assert str(caught.value) == "'" + "a" * 59 + "... is not an RFC 5322 header field name"
+        build(headers=[(sixty_one, "1"), (sixty_one.upper(), "2")])
+    assert str(caught.value) == "header '" + "A" * 59 + "... given twice"
 
 
 def test_strict_messages_name_a_field_of_sixty_characters_whole() -> None:
@@ -117,3 +117,11 @@ def test_the_default_mode_needs_memory_of_a_few_times_the_input(uri: str) -> Non
 def test_the_default_mode_needs_no_more_memory_than_strict(uri: str) -> None:
     # Decoding many escapes costs what urllib.parse.unquote_to_bytes costs, in both modes.
     assert _peak(uri) <= 1.1 * _peak(uri, strict=True)
+
+
+@pytest.mark.parametrize("end", ["\t", "\n", "\r\n"], ids=["tab", "lf", "crlf"])
+def test_removing_tabs_and_newlines_costs_at_most_a_copy(end: str) -> None:
+    # A regex substitution built a list of pieces: 10 to 17 times the input, by interpreter.
+    uri = TABS.replace("\t", end)
+    peak = _peak(uri)
+    assert peak < 4 * len(uri), peak / len(uri)

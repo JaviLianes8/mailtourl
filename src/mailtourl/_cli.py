@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from typing import TextIO
 
 from ._build import build
-from ._errors import MailtoError, quoted
+from ._errors import MailtoError
 from ._model import Mailto
 from ._parse import parse
 
@@ -24,7 +24,7 @@ def _parser() -> argparse.ArgumentParser:
     read.add_argument(
         "--safe",
         action="store_true",
-        help="keep only keywords among other headers and only addr-spec recipients",
+        help="apply Mailto.safe(): keep only what is safe in general and to_uri writes",
     )
     write = commands.add_parser("build", help="print a mailto: URI built from the options")
     for flag in ("--to", "--cc", "--bcc"):
@@ -48,11 +48,14 @@ def _as_json(mail: Mailto) -> dict[str, object]:
     }
 
 
-def _read(stream: TextIO) -> str:
+def _read(stream: TextIO | None) -> str:
     """Standard input decoded as UTF-8 whatever the locale, less one line ending.
 
-    So piped text reads exactly like the same text given as an argument.
+    So piped text reads exactly like the same text given as an argument. There is no
+    stream at all under a closed descriptor, pythonw, a service or a scheduled task.
     """
+    if stream is None:
+        raise MailtoError("no standard input")
     raw = getattr(stream, "buffer", None)
     if raw is None:
         text = stream.read()
@@ -75,8 +78,10 @@ def main(
 ) -> int:
     """Run the ``mailtourl`` command and return its exit status."""
     args = _parser().parse_args(argv)
-    out = stdout or sys.stdout
+    out: TextIO | None = stdout or sys.stdout
     try:
+        if out is None:
+            raise MailtoError("no standard output")
         if args.command == "parse":
             text = args.uri if args.uri is not None else _read(stdin or sys.stdin)
             mail = parse(text, strict=args.strict)
@@ -87,7 +92,8 @@ def main(
             for item in args.header:
                 name, equals, value = item.partition("=")
                 if not equals:
-                    raise MailtoError(f"--header expects NAME=VALUE, got {quoted(item)}")
+                    # The argument is not echoed: "Name: value" would print the value.
+                    raise MailtoError("--header expects NAME=VALUE")
                 headers.append((name, value))
             out.write(
                 build(
@@ -100,7 +106,8 @@ def main(
                 )
             )
     except MailtoError as error:
-        print(f"mailtourl: {error}", file=sys.stderr)
+        if sys.stderr is not None:
+            print(f"mailtourl: {error}", file=sys.stderr)
         return 2
     out.write("\n")
     return 0

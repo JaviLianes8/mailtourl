@@ -6,10 +6,10 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import TypeAlias
 
-from ._chars import FTEXT, is_control, plain
+from ._chars import is_control, plain
 from ._codec import encode_address, encode_field
 from ._errors import MailtoError, quoted
-from ._headers import DEDICATED, is_ignored
+from ._headers import DEDICATED, is_ignored, name_fault, read_pair
 
 _SCHEME = "mailto:"
 _LINE_BREAK = re.compile(r"\r\n|\r|\n")
@@ -36,7 +36,7 @@ def _join(value: Addresses, what: str) -> str:
     encoded: list[str] = []
     for address in _as_list(value, what):
         try:
-            encoded.append(encode_address(address))
+            encoded.append(encode_address(address, query=what != "to"))
         except MailtoError as error:
             raise MailtoError(f"{what}: {error.reason}") from None
     return ",".join(encoded)
@@ -75,11 +75,11 @@ def _header_pairs(headers: Headers) -> list[tuple[str, str]]:
     seen: set[str] = set()
     pairs: list[tuple[str, str]] = []
     for item in items:
-        if not isinstance(item, (tuple, list)) or len(item) != 2:
-            raise TypeError("headers must hold (name, value) pairs")
-        name = _check_text(item[0], "header name")
-        if not name or any(char not in FTEXT for char in name):
-            raise MailtoError(f"{quoted(name)} is not an RFC 5322 header field name")
+        first, second = read_pair(item)
+        name = _check_text(first, "header name")
+        fault = name_fault(name)
+        if fault is not None:
+            raise MailtoError(fault[0])
         key = name.lower()
         if key in DEDICATED:
             raise MailtoError(f"pass {key!r} through its own argument, not headers")
@@ -88,7 +88,7 @@ def _header_pairs(headers: Headers) -> list[tuple[str, str]]:
         if key in seen:
             raise MailtoError(f"header {quoted(name)} given twice")
         seen.add(key)
-        pairs.append((name, _check_text(item[1], f"header {quoted(name)}")))
+        pairs.append((name, _check_text(second, f"header {quoted(name)}")))
     return pairs
 
 
@@ -103,10 +103,11 @@ def build(
 ) -> str:
     r"""Build a mailto: URI, percent-encoding every field per RFC 6068.
 
-    Raises MailtoError for an address ``is_address`` refuses, a control character
-    outside the body, a header name that is not a field name, given twice, owned by a
-    dedicated argument or one RFC 6068 says clients must ignore, and TypeError for
-    arguments of the wrong type. Body line breaks are written as CRLF.
+    Raises MailtoError for an address ``is_address`` refuses, a control character other
+    than tab (and, in the body, the line breaks), a header name that is not a field name,
+    given twice, owned by a dedicated argument or one RFC 6068 says clients must ignore,
+    and TypeError for arguments of the wrong type. Body line breaks are written as CRLF,
+    and "+" as %2B in field values and in cc and bcc addresses.
 
     >>> from mailtourl import build
     >>> build(["a@example.com", "b@example.com"], subject="Re: 1+1", body="hi\nthere")

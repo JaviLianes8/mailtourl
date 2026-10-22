@@ -10,7 +10,7 @@ from ._address import is_address
 from ._build import build
 from ._chars import plain
 from ._errors import MailtoError
-from ._headers import DEFAULT_SAFE
+from ._headers import DEFAULT_SAFE, read_pair
 
 
 def _strings(value: str | Iterable[str] | None, what: str) -> tuple[str, ...]:
@@ -37,9 +37,7 @@ def _pairs(
     items = tuple(value.items()) if isinstance(value, Mapping) else tuple(value)
     pairs: list[tuple[str, str]] = []
     for item in items:
-        if not isinstance(item, (tuple, list)) or len(item) != 2:
-            raise TypeError("headers must hold (name, value) pairs")
-        name, text = item
+        name, text = read_pair(item)
         if not isinstance(name, str) or not isinstance(text, str):
             raise TypeError("headers must hold (str, str) pairs")
         pairs.append((plain(name), plain(text)))
@@ -142,7 +140,8 @@ class Mailto:
         they hold a control character ``build`` refuses; and the first header of each name
         in ``allow`` (ignoring case) that ``build`` accepts. The default keeps ``keywords``,
         the one other field the RFC calls safe in general; widen it for sources you trust.
-        ``to_uri`` never raises on the result.
+        ``allow`` is one name as a ``str`` or an iterable of names. ``to_uri`` never raises
+        on the result.
 
         >>> mail = Mailto(["a@x.example", "Eve <e@x.example>"], headers={"In-Reply-To": "<1@x>"})
         >>> mail.safe()
@@ -150,6 +149,8 @@ class Mailto:
         >>> mail.safe(allow=["in-reply-to"]).headers
         (('In-Reply-To', '<1@x>'),)
         """
+        if allow is None:
+            raise TypeError("allow must be str or an iterable of str, got NoneType")
         keep = {name.lower() for name in _strings(allow, "allow")}
         pairs: list[tuple[str, str]] = []
         for name, value in self.headers:

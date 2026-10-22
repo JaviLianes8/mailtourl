@@ -111,7 +111,7 @@ def test_bytes_that_are_not_utf8_win_a_tie_with_what_they_cut_short(uri: str) ->
 def test_a_reason_quotes_a_bad_part_as_the_replacement_character() -> None:
     with pytest.raises(MailtoError) as caught:
         parse("mailto:.%FF", strict=True)
-    assert caught.value.reason == "empty dot-separated part in local part '.�'"
+    assert caught.value.reason == "empty dot-separated part in local part '.\ufffd'"
     assert caught.value.offset == 7
 
 

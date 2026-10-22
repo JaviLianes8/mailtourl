@@ -15,8 +15,8 @@ Progress:
 - [x] Docs: README, GUIDE, CHANGELOG (items 11, 12)
 - [x] Packaging, e2e, every Python on this PC (items 8, 10, 13, 14)
 - [x] Gates (item 15)
-- [ ] Five QA lenses report PASS (item 19)
-- [ ] Independent reviewer reports PASS (item 16)
+- [x] Five QA lenses report PASS (item 19)
+- [x] Independent reviewer reports PASS (item 16)
 - [ ] Merge and publish (item 17), left to the maintainer
 
 ## Scorecard
@@ -32,16 +32,16 @@ Progress:
 | 7 | Real ground truth | PASS: see Ground truth |
 | 8 | Real e2e from the wheel | PASS: wheel installed in a throwaway venv, used from an empty folder, CLI by subprocess (script and `python -m`); no PyPI release to upgrade from |
 | 9 | Seeded fuzz, no crash, hang or blowup | PASS: see Fuzz and hostile input |
-| 10 | Supported Pythons | PASS at 2224141: CPython 3.10.19, 3.11.5, 3.12.12, 3.13.2, 3.14.2, 3.14.2t; 3.8.20 and 3.9.25 refused by `requires-python` |
+| 10 | Supported Pythons | PASS at 2224141, again at 3407455: CPython 3.10.19, 3.11.5, 3.12.12, 3.13.2, 3.14.2, 3.14.2t; 3.8.20 and 3.9.25 refused by `requires-python` |
 | 11 | README and `twine check` | PASS: `twine check --strict`, absolute links, badge, verified comparison |
 | 12 | Dated CHANGELOG section | PASS: 1.0.0, 2026-10-22 |
 | 13 | pyproject 1.0.0, Production/Stable | PASS |
 | 14 | sdist and wheel contents | PASS |
 | 15 | Gates each exit 0 | PASS: see Gates |
-| 16 | Independent reviewer | pending |
-| 17 | PR and trace guard | PR from `release/1.0.0`; merge and publish left to the maintainer |
+| 16 | Independent reviewer | PASS: round 1 at 3407455, every item PASS (see Independent review) |
+| 17 | PR and trace guard | PASS for this branch: PR #3 from `release/1.0.0` to `main`, trace guard clean; merge and publish left to the maintainer |
 | 18 | Contracts bite (mutations) | PASS: 42 author mutants, 40 killed at once, 2 survivors killed by new contracts |
-| 19 | Five independent QA lenses | pending |
+| 19 | Five independent QA lenses | PASS: all five lenses report PASS (see QA verdicts) |
 
 ## Baseline on 0.2.0 (before any change)
 
@@ -429,6 +429,56 @@ PC (turn `elena/4`), CPython 3.14.2 in a fresh venv, fetched sources, Node.js, P
 
 None.
 
-### Pending
+### QA verdicts
 
-Re-verification of round 5 by lens e, then the independent review (item 16).
+Lens e re-verified R5-F1 to R5-F4 as fixed on 3407455. Since lenses a, b and d gave
+their verdicts at 07e06f7, `src` changed only in `_address.py` and `_strict.py` (the
+domain literal and bad-byte offset fixes from lenses c and e, re-verified by those two
+lenses); the independent review re-ran the interpreter matrix, packaging and e2e at
+3407455. Report paths are relative to the local certification work folder, which is
+not part of the repository.
+
+| Lens | Rounds | Final verdict | Report | Commit |
+| --- | --- | --- | --- | --- |
+| a: API and docs | 2 | PASS | `lens-a-r2/probes` (`repro.py`, `docs.py`, `sweep.py`) and the round summary | 07e06f7 |
+| b: correctness and ground truth | 2 | PASS | `lens-b-r2/REPORT.md` | 07e06f7 |
+| c: adversarial and robustness | 4 | PASS | `lens-c-r4/probes` | 8128ef4 |
+| d: packaging and real e2e | 2 | PASS | `lens-d-r2/out` (matrix logs for 3.10 to 3.14t, CLI sweep, twine, wheel and sdist lists) | 07e06f7 |
+| e: contract strength | 5 | PASS | `lens-e-r5/results-r6.json` | 3407455 |
+
+Lens a, round 2: the round 1 findings re-run as fixed; all 11 Python blocks in README and
+GUIDE give the output the docs show; 30 doctests pass; a sweep of 40 probes (encoding of
+`+` per field, domains holding `+`, 21 strict offset cases, header name errors, tuple and
+list subclasses, the CLI with a malformed `--header` and with no stdin or stdout) found
+nothing. Lens d, round 2: on CPython 3.10.19, 3.11.5, 3.12.12, 3.13.2, 3.14.2 and 3.14.2t
+the sdist tree with `MAILTOURL_E2E=1`, fetched sources, Node.js and Perl passed 669, none
+skipped, and the installed wheel passed 657 with 1 skipped; the 3.14.2t memory peak is
+2.0x with the GIL off and on; `twine check --strict`, `check-wheel-contents`, reproducible
+bytes and the refusal of 3.9 all pass; a sweep of 40 API and CLI probes found nothing.
+
+### Independent review
+
+Round 1 on a fresh clone at 3407455 (PR #3 head), scored against the 19 items. Evidence
+is in `review-r1/out`.
+
+| # | Item | Result |
+| --- | --- | --- |
+| 1 | Public API stable | PASS: signatures inspected; every behaviour change is in CHANGELOG 1.0.0 |
+| 2 | `__all__` exact, no private imports | PASS: `__all__` is the five names, all with `__module__` `mailtourl`; README, GUIDE and CHANGELOG import only from `mailtourl` |
+| 3 | Docstrings and doctests | PASS: every public name and `Mailto` method has an example; the doctests run in the gate |
+| 4 | Typed end to end | PASS: `mypy --strict` on `src` (13 files) and `src tests` (42 files) exit 0; `py.typed` in the wheel; no `Any` in the public hints |
+| 5 | Typed, bounded errors | PASS: `MailtoError` is a `ValueError` with `reason` and `offset`; a 200,000-character hostile input gives a message under 300 characters |
+| 6 | Contract tests | PASS: `tests/test_contract_api.py` and `tests/test_contract.py` cover the surface; 6 independent mutants all killed |
+| 7 | Real ground truth | PASS: all five MANIFEST URLs re-fetched on 2026-10-22, size and sha256 match; hand-written cases labelled |
+| 8 | Real e2e | PASS: wheel installed in a throwaway venv on each of the six interpreters, used from an empty folder with `-I`, the API and the CLI (script and `python -m`) driven by subprocess; PyPI answers 404, so no upgrade path |
+| 9 | Fuzz and hostile input | PASS: `test_fuzz` and `test_hostile` green in every run |
+| 10 | Supported Pythons | PASS: sdist tests against the installed wheel passed 703 with 1 skip (the opt-in e2e) on CPython 3.10.19, 3.11.5, 3.12.12, 3.13.2, 3.14.2 and 3.14.2t; 3.9.25 refused |
+| 11 | README and `twine check` | PASS: `twine check --strict` for wheel and sdist; the README renders; links absolute; the comparison facts re-verified live. GUIDE and CHANGELOG links point to `main` and resolve once merged |
+| 12 | Dated CHANGELOG section | PASS: `[1.0.0] - 2026-10-22` with a stable surface summary and Changed, Fixed, Added |
+| 13 | pyproject | PASS: 1.0.0, Production/Stable, Python 3.10 to 3.14, MIT with License-File, four project URLs, 7 keywords, no runtime dependency |
+| 14 | sdist and wheel contents | PASS: `check-wheel-contents` OK, a rebuild gives the identical wheel; the sdist ships only `MANIFEST.json` under `tests/upstream` |
+| 15 | Gates | PASS: format, lint, `mypy --strict src` and `pytest` (715 passed, none skipped, with `MAILTOURL_E2E=1`, fetched sources, Node.js and Perl) each exit 0 |
+| 16 | Independent review | PASS: this review; nothing posted to GitHub |
+| 17 | PR and trace guard | PASS for this branch: tree, history, PR title and body clean, no em-dash, source files of 200 lines or fewer, branches `main` and `release/1.0.0` only; merge and publish left to the maintainer |
+| 18 | Contracts bite | PASS: mutation tables recorded here; a spot round of 6 mutants (`+` raw in query addresses, cc and bcc swapped, case-sensitive `safe` allow list, quote cap 600, case-sensitive scheme, pickle dropping `offset`) killed 6 of 6 |
+| 19 | Five QA lenses | PASS: all five lens artefacts exist and match the commits above |

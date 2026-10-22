@@ -319,10 +319,47 @@ and the suite against the installed wheel (`src` removed) passed 657, skipped 1 
 opt-in e2e). `ruff format --check .`, `ruff check .`, `mypy --strict src` and
 `mypy --strict src tests` exit 0 at the same commit.
 
+### Round 3 (re-verification of round 2 by lenses c and e on 07e06f7)
+
+Lens c re-verified its round 2 findings F1 to F3 as fixed and its sweep (60,000 seeded
+strict and default-mode reads, the `+` round trip, `is_address`, `build` and `safe()`
+agreement, 29 scaling shapes, CLI streams) came back clean but for F4. Lens e re-verified
+R2-1 to R2-6 as fixed and N18 as killed; M10, P19 and L7 stay equivalent; of its 40 new
+mutants, 38 were killed and 2 survived. Every finding was fixed; none is disputed. The
+new and changed cases of `tests/test_first_offender.py`, `tests/test_build.py` and
+`tests/test_strict.py` were run against 07e06f7: the 7 domain literal cases fail there
+(3 strict offsets, 3 `build` reasons, the updated row of `tests/test_strict.py`); the 6
+offset cases for the two survivors pass there, as mutation-gap contracts do.
+
+| Lens | Id | Severity | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| c | F4 | low | a domain literal missing its `]` or followed by more text was reported at its opening `[` as "character '[' not allowed in domain" | `split_address` reads a domain that starts with `[` as a literal up to the first `]`: "unterminated domain literal" at the end of the address, "text after the domain literal" at the first character after the `]`, any other character outside dtext where it stands; GUIDE lists a closing `]` among the missing things, CHANGELOG under Fixed; three strict offsets and three `build` reasons pinned, the old row `mailto:a@%5B1.2.3.4` moved from 9 to 19 |
+| e | R3-1 | low | survivor X9: `local = text[:at]` in `split_address` | strict offsets `mailto:ab%3C` 9, `mailto:ab%20` 9, `mailto:a.b%3C` 10 |
+| e | R3-2 | low | survivor X38: `offset + fault[1]` in `check_name` | strict offsets `mailto:?%41%3A=1` 11, `mailto:?%41b%20=1` 12, `mailto:a@x.example?X-%41%3A=1` 24 |
+
+Mutants applied to the fixed tree, one at a time, against `tests/test_first_offender.py`,
+`tests/test_build.py` and `tests/test_strict.py`:
+
+| Mutant | Result |
+| --- | --- |
+| X9 `local = text[:at]` (lens e) | killed: `[mailto:ab%3C-9]` |
+| X38 `offset + fault[1]` (lens e) | killed: `[mailto:?%41%3A=1-11]` |
+| text after the `]` tested with `index + 2` | killed: `[mailto:a@%5B192.0.2.1%5Dx-24]` |
+| text after the `]` reported at the `]` | killed: `[mailto:a@%5B192.0.2.1%5Dx-24]` |
+| unterminated literal reported one before the end | killed: `[mailto:?cc=a@%5B192.0.2.1-25]` |
+| `]` never closes the literal | killed: `[mailto:a@%5B192.0.2.1%5Dx-24]` |
+| the closing `]` does not stop the scan | killed: `test_a_domain_literal_has_its_brackets_encoded` |
+
+Fix commit: 1ead1ea (code, tests, GUIDE, CHANGELOG). Gates at 1ead1ea: `ruff format
+--check .`, `ruff check .`, `mypy --strict src` and `mypy --strict src tests` exit 0 on
+this PC; `pytest` from an archive of the commit on Elena's PC (turn `elena/5`), CPython
+3.14.2 in a fresh venv, fetched sources, Node.js, Perl and `MAILTOURL_E2E=1`: 681 passed,
+none skipped.
+
 ### Disputed findings
 
 None.
 
 ### Pending
 
-Re-verification of round 2 by each lens, then the independent review (item 16).
+Re-verification of round 3 by lenses c and e, then the independent review (item 16).

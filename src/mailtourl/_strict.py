@@ -6,7 +6,7 @@ from collections.abc import Collection
 
 from ._address import split_address
 from ._chars import FTEXT, HEX, LINE_BREAKS, is_control
-from ._errors import MailtoError
+from ._errors import MailtoError, quoted
 
 
 def position(raw: str, value: str, index: int, offset: int) -> int:
@@ -39,7 +39,7 @@ def check_raw(raw: str, allowed: Collection[str], offset: int, what: str) -> Non
 
 def check_name(name: str, offset: int) -> None:
     if not name or any(char not in FTEXT for char in name):
-        raise MailtoError(f"{name[:60]!r} is not an RFC 5322 header field name", offset)
+        raise MailtoError(f"{quoted(name)} is not an RFC 5322 header field name", offset)
 
 
 def check_text(value: str, raw: str, what: str, offset: int) -> None:

@@ -8,7 +8,7 @@ from typing import TypeAlias
 
 from ._chars import FTEXT, is_control
 from ._codec import encode_address, encode_field
-from ._errors import MailtoError
+from ._errors import MailtoError, quoted
 from ._headers import DEDICATED, is_ignored
 
 _SCHEME = "mailto:"
@@ -21,9 +21,11 @@ Headers: TypeAlias = Mapping[str, str] | Iterable[tuple[str, str]] | None
 def _as_list(value: Addresses, what: str) -> list[str]:
     if value is None:
         return []
-    if isinstance(value, (bytes, bytearray)):
-        raise TypeError(f"{what} must be str or an iterable of str, got bytes")
-    items = [value] if isinstance(value, str) else list(value)
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (bytes, bytearray)) or not isinstance(value, Iterable):
+        raise TypeError(f"{what} must be str or an iterable of str, got {type(value).__name__}")
+    items = list(value)
     for item in items:
         if not isinstance(item, str):
             raise TypeError(f"{what} must hold str, got {type(item).__name__}")
@@ -65,6 +67,8 @@ def _encode_body(body: object) -> str:
 def _header_pairs(headers: Headers) -> list[tuple[str, str]]:
     if headers is None:
         return []
+    if isinstance(headers, (str, bytes, bytearray)) or not isinstance(headers, Iterable):
+        raise TypeError(f"headers must be a mapping or pairs, got {type(headers).__name__}")
     items = list(headers.items()) if isinstance(headers, Mapping) else list(headers)
     seen: set[str] = set()
     pairs: list[tuple[str, str]] = []
@@ -74,16 +78,16 @@ def _header_pairs(headers: Headers) -> list[tuple[str, str]]:
         name, value = item
         _check_text(name, "header name")
         if not name or any(char not in FTEXT for char in name):
-            raise MailtoError(f"{name[:60]!r} is not an RFC 5322 header field name")
+            raise MailtoError(f"{quoted(name)} is not an RFC 5322 header field name")
         key = name.lower()
         if key in DEDICATED:
             raise MailtoError(f"pass {key!r} through its own argument, not headers")
         if is_ignored(name):
-            raise MailtoError(f"RFC 6068 section 3 says clients MUST ignore {name[:60]!r}")
+            raise MailtoError(f"RFC 6068 section 3 says clients MUST ignore {quoted(name)}")
         if key in seen:
-            raise MailtoError(f"header {name[:60]!r} given twice")
+            raise MailtoError(f"header {quoted(name)} given twice")
         seen.add(key)
-        pairs.append((name, _check_text(value, f"header {name[:60]!r}")))
+        pairs.append((name, _check_text(value, f"header {quoted(name)}")))
     return pairs
 
 
@@ -96,12 +100,20 @@ def build(
     body: str | None = None,
     headers: Headers = None,
 ) -> str:
-    """Build a mailto: URI, percent-encoding every field per RFC 6068.
+    r"""Build a mailto: URI, percent-encoding every field per RFC 6068.
 
     Raises MailtoError for an address that is not an addr-spec, a control character
     outside the body, a header name that is not a field name, given twice, owned by a
-    dedicated argument or one RFC 6068 says clients must ignore. Body line breaks are
-    written as CRLF.
+    dedicated argument or one RFC 6068 says clients must ignore, and TypeError for
+    arguments of the wrong type. Body line breaks are written as CRLF.
+
+    >>> build(["a@example.com", "b@example.com"], subject="Re: 1+1", body="hi\nthere")
+    'mailto:a@example.com,b@example.com?subject=Re:%201%2B1&body=hi%0D%0Athere'
+    >>> build(cc="c@example.com", headers={"Keywords": "a&b"})
+    'mailto:?cc=c@example.com&Keywords=a%26b'
+    >>> build("a@example.com", subject="Hi\r\nBcc: spy@evil.example")
+    Traceback (most recent call last):
+    mailtourl.MailtoError: control character '\r' in subject
     """
     fields: list[tuple[str, str]] = []
     for name, addresses in (("cc", cc), ("bcc", bcc)):

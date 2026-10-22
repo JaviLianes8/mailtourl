@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from typing import TextIO
 
 from ._build import build
-from ._errors import MailtoError
+from ._errors import MailtoError, quoted
 from ._model import Mailto
 from ._parse import parse
 
@@ -21,7 +21,9 @@ def _parser() -> argparse.ArgumentParser:
     read.add_argument("uri", nargs="?", help="the URI; read from standard input when absent")
     read.add_argument("--strict", action="store_true", help="reject input outside RFC 6068")
     read.add_argument(
-        "--safe", action="store_true", help="drop headers other than keywords (RFC 6068 4)"
+        "--safe",
+        action="store_true",
+        help="keep only keywords among other headers and only addr-spec recipients",
     )
     write = commands.add_parser("build", help="print a mailto: URI built from the options")
     for flag in ("--to", "--cc", "--bcc"):
@@ -62,7 +64,7 @@ def main(
             for item in args.header:
                 name, equals, value = item.partition("=")
                 if not equals:
-                    raise MailtoError(f"--header expects NAME=VALUE, got {item!r}")
+                    raise MailtoError(f"--header expects NAME=VALUE, got {quoted(item)}")
                 headers.append((name, value))
             out.write(
                 build(

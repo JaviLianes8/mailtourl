@@ -117,7 +117,7 @@ def test_a_non_pair_header_names_the_problem(call: object) -> None:
     ],
 )
 def test_bytes_are_named_in_the_type_error(call: object) -> None:
-    with pytest.raises(TypeError, match="got bytes"):
+    with pytest.raises(TypeError, match=r"got bytes|got bytearray"):
         call()  # type: ignore[operator]
 
 

@@ -6,6 +6,47 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-22
+
+The public API is now stable: the five names in `mailtourl.__all__` (`parse`, `build`,
+`Mailto`, `MailtoError`, `is_address`), their signatures, defaults and error types, and
+the `mailtourl` command follow Semantic Versioning from this release on. No release
+before this one was published to PyPI.
+
+### Stable
+
+- Reading: `parse` reads a URI the way a browser hands it to the mail client, or checks
+  it against the RFC 6068 grammar with `strict=True`; in both modes a decoded line break
+  or NUL outside the body raises `MailtoError` instead of reaching a header value.
+- Writing: `build` and `Mailto.to_uri` encode every field, write body line breaks as
+  `%0D%0A` and refuse input that would not survive the trip (invalid addresses, controls
+  outside the body, fields RFC 6068 section 3 says clients must ignore).
+- `Mailto`, a frozen, hashable value with `recipients`, `header`, `header_all` and `safe`.
+- `is_address` for the addr-spec form a `mailto:` URI may carry.
+- Errors: `MailtoError` (a `ValueError`) with `reason` and `offset`; `TypeError` for
+  arguments of the wrong type.
+
+### Changed
+
+- `Mailto.header` and `Mailto.header_all` raise `TypeError` for a name that is not a
+  `str` (they raised `AttributeError`).
+- `Mailto` stores plain `str` values when given `str` subclasses, and its constructor,
+  `build` and `Mailto.safe` raise `TypeError` with a clear message for a recipient list,
+  header collection or allow list of the wrong type.
+- `Mailto` and `MailtoError` report `mailtourl` as their module, so their reprs and
+  pickles name `mailtourl.Mailto` and `mailtourl.MailtoError`, never a private module.
+- Error messages quote at most 60 characters of the input: two strict-mode messages
+  quoted a whole header field name, however long. A lone surrogate is reported by its
+  code point.
+- For input made only of spaces and controls, the "not a mailto: URI" error reports
+  offset 0 instead of the length of the input.
+- `python -m mailtourl` runs the command only when executed, not on import.
+
+### Added
+
+- A runnable example in the docstring of every public name, run as doctests.
+- A guide, `GUIDE.md`, with the behaviour of every public name in detail.
+
 ## [0.2.0]
 
 ### Added

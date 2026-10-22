@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ._chars import FTEXT, PCHAR, QCHAR
 from ._codec import decode
-from ._errors import MailtoError
+from ._errors import MailtoError, quoted
 from ._headers import RECIPIENTS
 from ._model import Mailto
 from ._strict import check_address, check_body, check_name, check_raw, check_text, guard
@@ -58,22 +58,23 @@ class _Reader:
         key = name.lower()
         if self.strict:
             if key in self.seen:
-                raise MailtoError(f"header field {name[:60]!r} repeated", offset)
+                raise MailtoError(f"header field {quoted(name)} repeated", offset)
             self.seen.add(key)
+        shown = name if len(name) <= 60 else f"{name[:60]}..."
         if key in RECIPIENTS:
             self.addresses(key, raw_value, value_at, QCHAR)
             return
         if self.strict:
-            check_raw(raw_value, QCHAR, value_at, f"{name} value")
+            check_raw(raw_value, QCHAR, value_at, f"{shown} value")
         value = decode(raw_value, value_at, strict=self.strict)
         if key == "body":
             if self.strict:
                 check_body(value, raw_value, value_at)
             self.body = value if self.body is None else self.body
             return
-        guard(value, raw_value, f"{name} field", value_at)
+        guard(value, raw_value, f"{shown} field", value_at)
         if self.strict:
-            check_text(value, raw_value, f"{name} field", value_at)
+            check_text(value, raw_value, f"{shown} field", value_at)
         if key == "subject":
             self.subject = value if self.subject is None else self.subject
         else:
@@ -117,7 +118,17 @@ def parse(uri: str, *, strict: bool = False) -> Mailto:
     The default mode reads a URI the way a browser hands it over: leading and trailing
     C0 controls and spaces are stripped, tabs and newlines removed, the fragment ignored.
     ``strict=True`` checks the text against the RFC 6068 grammar instead. In both modes
-    a decoded CR, LF or NUL outside the body raises MailtoError: it would inject a header.
+    a decoded NUL or line break outside the body raises MailtoError: it would inject a
+    header. A ``uri`` that is not a ``str`` raises TypeError.
+
+    >>> mail = parse("mailto:a@example.com,b@example.com?cc=c@example.com&subject=Hi%20there")
+    >>> mail.to, mail.cc, mail.subject
+    (('a@example.com', 'b@example.com'), ('c@example.com',), 'Hi there')
+    >>> parse(" mailto:a@example.com?body=1+1%3D2#ignored ").body
+    '1+1=2'
+    >>> parse("mailto:a@example.com?subject=a b", strict=True)
+    Traceback (most recent call last):
+    mailtourl.MailtoError: ' ' must be percent-encoded in the subject value at offset 30
     """
     if not isinstance(uri, str):
         raise TypeError(f"expected str, got {type(uri).__name__}")
@@ -131,5 +142,6 @@ def parse(uri: str, *, strict: bool = False) -> Mailto:
     except MailtoError as error:
         if error.offset is None:
             raise
-        offset = kept[error.offset] if error.offset < len(kept) else len(uri)
+        # An error past the last kept character points just after it (or at 0 when empty).
+        offset = kept[error.offset] if error.offset < len(kept) else (kept[-1] + 1 if kept else 0)
         raise MailtoError(error.reason, offset) from None

@@ -14,16 +14,17 @@ from mailtourl import Mailto, MailtoError, build, is_address, parse
 
 SIGNATURES = {
     "parse": "(uri: 'str', *, strict: 'bool' = False) -> 'Mailto'",
-    "build": "(to: 'Addresses' = None, *, cc: 'Addresses' = None, bcc: 'Addresses' = None, "
-    "subject: 'str | None' = None, body: 'str | None' = None, headers: 'Headers' = None) "
-    "-> 'str'",
+    "build": "(to: 'str | Iterable[str] | None' = None, *, "
+    "cc: 'str | Iterable[str] | None' = None, bcc: 'str | Iterable[str] | None' = None, "
+    "subject: 'str | None' = None, body: 'str | None' = None, "
+    "headers: 'Mapping[str, str] | Iterable[tuple[str, str]] | None' = None) -> 'str'",
     "is_address": "(text: 'str') -> 'bool'",
 }
 METHODS = {
-    "__init__": "(self, to: 'str | Iterable[str]' = (), *, cc: 'str | Iterable[str]' = (), "
-    "bcc: 'str | Iterable[str]' = (), subject: 'str | None' = None, "
-    "body: 'str | None' = None, "
-    "headers: 'Mapping[str, str] | Iterable[tuple[str, str]]' = ()) -> 'None'",
+    "__init__": "(self, to: 'str | Iterable[str] | None' = None, *, "
+    "cc: 'str | Iterable[str] | None' = None, bcc: 'str | Iterable[str] | None' = None, "
+    "subject: 'str | None' = None, body: 'str | None' = None, "
+    "headers: 'Mapping[str, str] | Iterable[tuple[str, str]] | None' = None) -> 'None'",
     "header": "(self, name: 'str') -> 'str | None'",
     "header_all": "(self, name: 'str') -> 'tuple[str, ...]'",
     "safe": "(self, allow: 'Iterable[str]' = ('keywords',)) -> 'Mailto'",
@@ -106,7 +107,7 @@ WRONG_TYPES: list[tuple[str, Any]] = [
     ("build(header triple)", lambda: build(headers=[("a", "b", "c")])),  # type: ignore[list-item]
     ("build(header value)", lambda: build(headers={"K": None})),  # type: ignore[arg-type]
     ("build(header name)", lambda: build(headers={1: "v"})),  # type: ignore[arg-type]
-    ("Mailto(None)", lambda: Mailto(None)),  # type: ignore[arg-type]
+    ("Mailto(5)", lambda: Mailto(5)),  # type: ignore[arg-type]
     ("Mailto(bytes)", lambda: Mailto(b"a@x")),  # type: ignore[arg-type]
     ("Mailto(cc=[1])", lambda: Mailto(cc=[1])),  # type: ignore[list-item]
     ("Mailto(subject=1)", lambda: Mailto(subject=1)),  # type: ignore[arg-type]

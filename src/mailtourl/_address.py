@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ._chars import DTEXT, is_atext, is_qtext, is_vchar
+from ._chars import ADDRESS_SAFE, DTEXT, UNRESERVED, is_atext, is_qtext, is_vchar, plain
 from ._errors import MailtoError, quoted
 
 
@@ -67,22 +67,41 @@ def split_address(text: str) -> tuple[str, str]:
     return local, domain
 
 
+def check_domain(domain: str) -> None:
+    """Refuse an ASCII character that a domain name could hold only percent-encoded.
+
+    RFC 6068 section 2 allows percent-encoding in a domain name only for UTF-8, so such a
+    character ("&" and "=" too, which a field value must encode) fits no field of a URI.
+    """
+    if not domain.startswith("["):
+        for char in domain:
+            if char.isascii() and char not in UNRESERVED and char not in ADDRESS_SAFE:
+                raise MailtoError(f"{char!r} cannot be written in a domain name")
+
+
 def is_address(text: str) -> bool:
-    r"""True when ``text`` is an addr-spec that a mailto: URI may carry (RFC 6068 section 2).
+    r"""True when ``text`` is an addr-spec that ``build`` can write into a mailto: URI.
 
-    Quoted local parts are allowed, without bare whitespace (use a quoted-pair); comments,
-    obsolete forms and display names are not. Non-ASCII text is allowed per RFC 6532.
-    A ``text`` that is not a ``str`` raises TypeError.
+    That is an RFC 5322 addr-spec in the form RFC 6068 section 2 allows: a dot-atom or
+    quoted local part (no bare whitespace: use a quoted-pair), "@", then a dot-atom domain
+    or a domain literal; no comments, obsolete forms or display names. A domain name may
+    not hold any of ``# % & / = ? ^ ` { | }``, since RFC 6068 allows percent-encoding there
+    only for UTF-8. Non-ASCII is allowed (RFC 6532) except whitespace, controls, invisible
+    formatting characters and noncharacters (the guide lists them). A ``text`` that is not
+    a ``str`` raises TypeError.
 
+    >>> from mailtourl import is_address
     >>> is_address("jane@example.com"), is_address('"j\\ doe"@[192.0.2.1]')
     (True, True)
     >>> is_address("Jane <jane@example.com>"), is_address("jane@example.com ")
     (False, False)
+    >>> is_address("a@x/y.example"), is_address("a/b@x.example")
+    (False, True)
     """
     if not isinstance(text, str):
         raise TypeError(f"expected str, got {type(text).__name__}")
     try:
-        split_address(text)
+        check_domain(split_address(plain(text))[1])
     except MailtoError:
         return False
     return True

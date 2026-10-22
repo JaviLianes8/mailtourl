@@ -62,7 +62,7 @@ def test_a_domain_literal_has_its_brackets_encoded() -> None:
 @pytest.mark.parametrize("char", list("#%&/=?^`{|}"))
 def test_build_refuses_a_domain_char_that_would_need_an_ascii_escape(char: str) -> None:
     address = f"a@x{char}y.example"
-    assert is_address(address)
+    assert not is_address(address)
     with pytest.raises(MailtoError, match="cannot be written in a domain name"):
         build(address)
     assert build(f"{char}@[x{char}]") == f"mailto:%{ord(char):02X}@%5Bx%{ord(char):02X}%5D"

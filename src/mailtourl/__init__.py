@@ -17,14 +17,15 @@ from ._parse import parse
 
 __version__ = "1.0.0"
 
-# The public classes show and pickle as mailtourl.<Name>, so a pickle never depends on the
-# private module that defines them.
+# The public names show and pickle as mailtourl.<name>, so help() and a pickle never name
+# the private module that defines them.
+for _public in (build, is_address, parse, Mailto, MailtoError):
+    _public.__module__ = __name__
 for _cls in (Mailto, MailtoError):
-    _cls.__module__ = __name__
     # Methods follow, so doctest finds their examples here (it takes properties anyway).
     for _member in vars(_cls).values():
         if callable(_member) and str(getattr(_member, "__module__", "")).startswith("mailtourl._"):
             _member.__module__ = __name__
-del _cls, _member
+del _public, _cls, _member
 
 __all__ = ["Mailto", "MailtoError", "build", "is_address", "parse"]

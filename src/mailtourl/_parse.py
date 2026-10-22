@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from ._chars import FTEXT, PCHAR, QCHAR
+import re
+
+from ._chars import FTEXT, PCHAR, QCHAR, plain
 from ._codec import decode
 from ._errors import MailtoError, quoted
 from ._headers import RECIPIENTS
@@ -11,6 +13,8 @@ from ._strict import check_address, check_body, check_name, check_raw, check_tex
 
 _SCHEME = "mailto:"
 _C0_OR_SPACE = "".join(chr(code) for code in range(0x21))
+# The URL Standard removes every tab and newline from a link before it parses it.
+_REMOVED = re.compile("[\t\n\r]")
 
 
 class _Reader:
@@ -115,12 +119,14 @@ def _read(text: str, strict: bool) -> Mailto:
 def parse(uri: str, *, strict: bool = False) -> Mailto:
     """Parse a mailto: URI into a Mailto.
 
-    The default mode reads a URI the way a browser hands it over: leading and trailing
-    C0 controls and spaces are stripped, tabs and newlines removed, the fragment ignored.
-    ``strict=True`` checks the text against the RFC 6068 grammar instead. In both modes
-    a decoded NUL or line break outside the body raises MailtoError: it would inject a
-    header. A ``uri`` that is not a ``str`` raises TypeError.
+    The default mode first cleans the text as a browser does before it parses a link:
+    leading and trailing C0 controls and spaces are stripped, tabs and newlines removed,
+    the fragment ignored. ``strict=True`` checks the text against the RFC 6068 grammar
+    instead. In both modes a decoded NUL or line break outside the body raises
+    MailtoError: it would inject a header. A ``uri`` that is not a ``str`` raises
+    TypeError.
 
+    >>> from mailtourl import parse
     >>> mail = parse("mailto:a@example.com,b@example.com?cc=c@example.com&subject=Hi%20there")
     >>> mail.to, mail.cc, mail.subject
     (('a@example.com', 'b@example.com'), ('c@example.com',), 'Hi there')
@@ -132,16 +138,25 @@ def parse(uri: str, *, strict: bool = False) -> Mailto:
     """
     if not isinstance(uri, str):
         raise TypeError(f"expected str, got {type(uri).__name__}")
+    uri = plain(uri)
     if strict:
         return _read(uri, strict=True)
     begin = len(uri) - len(uri.lstrip(_C0_OR_SPACE))
-    end = len(uri.rstrip(_C0_OR_SPACE))
-    kept = [index for index in range(begin, end) if uri[index] not in "\t\n\r"]
+    cleaned = _REMOVED.sub("", uri.strip(_C0_OR_SPACE))
     try:
-        return _read("".join(uri[index] for index in kept), strict=False)
+        return _read(cleaned, strict=False)
     except MailtoError as error:
         if error.offset is None:
             raise
-        # An error past the last kept character points just after it (or at 0 when empty).
-        offset = kept[error.offset] if error.offset < len(kept) else (kept[-1] + 1 if kept else 0)
+        offset = _original(uri, begin, error.offset) if cleaned else 0
         raise MailtoError(error.reason, offset) from None
+
+
+def _original(uri: str, begin: int, index: int) -> int:
+    """Index in ``uri`` of character ``index`` of its cleaned text, which starts at ``begin``."""
+    at = begin + index
+    for removed in _REMOVED.finditer(uri, begin):
+        if removed.start() > at:
+            break
+        at += 1
+    return at

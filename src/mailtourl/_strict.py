@@ -7,26 +7,14 @@ from collections.abc import Collection
 from ._address import split_address
 from ._chars import FTEXT, HEX, LINE_BREAKS, is_control
 from ._errors import MailtoError, quoted
-
-
-def position(raw: str, value: str, index: int, offset: int) -> int:
-    """Offset in the input of ``value[index]``, where ``value`` is ``raw`` decoded."""
-    target = len(value[:index].encode("utf-8", "surrogatepass"))
-    consumed = 0
-    at = 0
-    while at < len(raw) and consumed < target:
-        if raw[at] == "%" and raw[at + 1 : at + 2] in HEX and raw[at + 2 : at + 3] in HEX:
-            consumed, at = consumed + 1, at + 3
-        else:
-            consumed, at = consumed + len(raw[at].encode("utf-8", "surrogatepass")), at + 1
-    return offset + at
+from ._positions import position
 
 
 def guard(value: str, raw: str, what: str, offset: int) -> None:
     """Refuse the characters that let a field smuggle in another header line."""
     for index, char in enumerate(value):
         if char in LINE_BREAKS:
-            where = position(raw, value, index, offset)
+            where = position(raw, index, offset)
             raise MailtoError(f"{char!r} in the {what}: header injection", where)
 
 
@@ -46,7 +34,7 @@ def check_text(value: str, raw: str, what: str, offset: int) -> None:
     """No control characters but HTAB in a header value."""
     for index, char in enumerate(value):
         if is_control(char) and char != "\t":
-            where = position(raw, value, index, offset)
+            where = position(raw, index, offset)
             raise MailtoError(f"control character {char!r} in the {what}", where)
 
 
@@ -59,7 +47,7 @@ def check_body(value: str, raw: str, offset: int) -> None:
             continue
         code = ord(char)
         if char in "\r\n" or ((code < 0x20 or 0x7F <= code <= 0x9F) and char != "\t"):
-            where = position(raw, value, index, offset)
+            where = position(raw, index, offset)
             if char in "\r\n":
                 raise MailtoError("body line break not written as %0D%0A", where)
             raise MailtoError(f"control character {char!r} in the body", where)
@@ -78,13 +66,14 @@ def _ascii_escape(raw: str) -> int:
 def check_address(address: str, raw: str, offset: int) -> None:
     """An addr-spec per RFC 6068 section 2, percent-encoding in a domain only for UTF-8."""
     try:
-        _, domain = split_address(address)
+        local, domain = split_address(address)
     except MailtoError as error:
         raise MailtoError(error.reason, offset) from None
-    if "@" not in raw:
-        raise MailtoError("the '@' before the domain must not be percent-encoded", offset)
+    # The separator is the "@" right after the local part, which may hold others in quotes.
+    at = position(raw, len(local), 0)
+    if raw[at : at + 1] != "@":
+        raise MailtoError("the '@' before the domain must not be percent-encoded", offset + at)
     if not domain.startswith("["):
-        at = raw.rindex("@")
         escape = _ascii_escape(raw[at + 1 :])
         if escape >= 0:
             where = offset + at + 1 + escape

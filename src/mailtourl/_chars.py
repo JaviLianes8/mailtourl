@@ -65,6 +65,11 @@ def is_vchar(char: str) -> bool:
     return 33 <= ord(char) <= 126 or is_utf8_text(char)
 
 
+def plain(text: str) -> str:
+    """``text`` as an exact ``str``, so a subclass cannot change how it iterates or measures."""
+    return text if type(text) is str else str.__str__(text)
+
+
 def is_control(char: str) -> bool:
     """A C0 control, DEL, a C1 control or a line or paragraph separator."""
     code = ord(char)

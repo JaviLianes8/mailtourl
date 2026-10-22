@@ -17,7 +17,7 @@ from email.headerregistry import Address
 
 import pytest
 
-from mailtourl import Mailto, is_address, parse
+from mailtourl import Mailto, MailtoError, is_address, parse
 from mailtourl._address import split_address
 
 PERL = shutil.which("perl")
@@ -161,9 +161,12 @@ def test_python_email_parser_reads_every_ascii_address_the_same_way() -> None:
         local = "".join(rng.choice(local_pool) for _ in range(rng.randrange(1, 8)))
         domain = "".join(rng.choice(domain_pool) for _ in range(rng.randrange(1, 8)))
         text = f"{local}@{domain}"
-        if not is_address(text):
+        # The addr-spec form; is_address also refuses domains build cannot write.
+        try:
+            local, domain = split_address(text)
+        except MailtoError:
+            assert not is_address(text), text
             continue
-        local, domain = split_address(text)
         address = Address(addr_spec=text)
         assert (address.username, address.domain) == (_unquoted(local), domain), text
         checked += 1

@@ -18,7 +18,7 @@ class MailtoError(ValueError):
     index in the parsed string where the problem starts, or None when there is none (the
     builder's errors).
 
-    >>> from mailtourl import parse
+    >>> from mailtourl import MailtoError, parse
     >>> try:
     ...     parse("mailto:a@example.com?subject=%0D%0ABcc:%20spy@evil.example")
     ... except MailtoError as error:
@@ -26,9 +26,9 @@ class MailtoError(ValueError):
     '\r' in the subject field: header injection 29 True
     """
 
-    def __init__(self, message: str, offset: int | None = None) -> None:
-        super().__init__(message if offset is None else f"{message} at offset {offset}")
-        self.reason = message
+    def __init__(self, reason: str, offset: int | None = None) -> None:
+        super().__init__(reason if offset is None else f"{reason} at offset {offset}")
+        self.reason = reason
         self.offset = offset
 
     def __reduce__(self) -> tuple[type[MailtoError], tuple[str, int | None]]:

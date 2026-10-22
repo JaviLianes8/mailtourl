@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import codecs
 import json
 import sys
 from collections.abc import Sequence
@@ -47,6 +48,28 @@ def _as_json(mail: Mailto) -> dict[str, object]:
     }
 
 
+def _read(stream: TextIO) -> str:
+    """Standard input decoded as UTF-8 whatever the locale, less one line ending.
+
+    So piped text reads exactly like the same text given as an argument.
+    """
+    raw = getattr(stream, "buffer", None)
+    if raw is None:
+        text = stream.read()
+    else:
+        data = raw.read()
+        skip = len(codecs.BOM_UTF8) if data.startswith(codecs.BOM_UTF8) else 0
+        try:
+            text = data[skip:].decode("utf-8")
+        except UnicodeDecodeError as error:
+            byte = skip + error.start
+            raise MailtoError(f"standard input is not UTF-8 at byte {byte}") from None
+    for end in ("\r\n", "\n", "\r"):
+        if text.endswith(end):
+            return text[: -len(end)]
+    return text
+
+
 def main(
     argv: Sequence[str] | None = None, stdin: TextIO | None = None, stdout: TextIO | None = None
 ) -> int:
@@ -55,7 +78,7 @@ def main(
     out = stdout or sys.stdout
     try:
         if args.command == "parse":
-            text = args.uri if args.uri is not None else (stdin or sys.stdin).read().strip()
+            text = args.uri if args.uri is not None else _read(stdin or sys.stdin)
             mail = parse(text, strict=args.strict)
             # ASCII output cannot fail on a console or pipe that lacks a character.
             json.dump(_as_json(mail.safe() if args.safe else mail), out, ensure_ascii=True)

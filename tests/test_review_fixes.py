@@ -58,7 +58,7 @@ def test_lenient_mode_drops_fields_whose_name_is_not_a_field_name(name: str) -> 
 def test_strict_mode_refuses_a_percent_encoded_separator() -> None:
     with pytest.raises(MailtoError, match="'@' before the domain") as caught:
         parse("mailto:joe%40ex%61mple.com", strict=True)
-    assert caught.value.offset == 7
+    assert caught.value.offset == 10
     assert parse("mailto:joe%40example.com").to == ("joe@example.com",)
 
 

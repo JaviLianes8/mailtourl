@@ -25,7 +25,7 @@ Progress:
 | --- | --- | --- |
 | 1 | Public API reviewed for stability | PASS: five names, signatures and defaults kept from 0.2.0 and pinned by `tests/test_contract_api.py`; every behaviour change in CHANGELOG |
 | 2 | `__all__` exact, no private imports in docs | PASS |
-| 3 | Docstrings with runnable examples, doctests | PASS: 11 doctests; README (4 blocks, 10 outputs) and GUIDE (7 blocks, 30 outputs) run as tests |
+| 3 | Docstrings with runnable examples, doctests | PASS: 11 doctests, the five public names' examples also in a fresh namespace; README (4 blocks, 10 outputs) and GUIDE (7 blocks, 32 outputs) run as tests |
 | 4 | Typed end to end | PASS: `mypy --strict src tests`, `py.typed`, consumer typing pinned by `tests/test_typing.py` |
 | 5 | Typed, documented, bounded errors | PASS: `MailtoError` (a `ValueError`) with `reason` and `offset`, `TypeError` for wrong types, quoted input capped at 60 characters |
 | 6 | Contract tests of every public name | PASS |
@@ -65,8 +65,9 @@ reproduced:
 
 Kept: `parse(uri, *, strict=False)`, `build(to=None, *, cc, bcc, subject, body, headers)`,
 `is_address(text)`, `Mailto` (fields `to`, `cc`, `bcc`, `subject`, `body`, `headers`;
-`recipients`, `header`, `header_all`, `safe`, `to_uri`) and `MailtoError(message,
-offset=None)` with `reason` and `offset`. Changed (all in CHANGELOG and GUIDE): the defects
+`recipients`, `header`, `header_all`, `safe`, `to_uri`) and `MailtoError(reason,
+offset=None)` with `reason` and `offset` (the first parameter was `message` until QA
+round 1, see below). Changed (all in CHANGELOG and GUIDE): the defects
 above. The GUIDE states what SemVer covers: names, signatures, defaults, `Mailto` fields,
 exception types, `reason`/`offset` and the CLI options, not message wording.
 
@@ -188,4 +189,70 @@ none skipped) each exit 0.
 
 ## QA lenses (item 19) and independent review (item 16)
 
-Pending: run after this report on fresh agents.
+### Round 1 (QA lenses a to e on b488ff9)
+
+Every finding was fixed; none is disputed. Each behaviour bug got a contract test first,
+run against b488ff9 to see it fail, then the fix: 80 of the 107 new cases fail there (one
+only because the module it tests is new); the 27 that pass are lens e's mutation-gap
+contracts, which pass on correct code by design, and cases that were already right. Fix
+commits: 7c6da55 (code and tests), 1e47fbc (docs), ab4ddb5 (installed-package e2e).
+
+| Lens | Id | Severity | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| a | M1 | medium | `is_address` accepted a domain holding an ASCII character that needs an escape (`/`, `#`, `&`, ...), which no URI can carry | `is_address` applies the domain rule of `build` (`_address.check_domain`, shared): true exactly when `build` can write the address; `tests/test_writable.py` (per character, plus 20,000 seeded candidates agreeing with `build`) |
+| a | M2 | medium | `safe()` did not make a value buildable | `safe()` now guarantees it: drops a subject or body with a control `build` refuses, allowed headers `build` refuses, repeats of an allowed name (first wins); `to_uri` docstring and docs state what it refuses in either mode; `tests/test_writable.py` (cases plus 12,000 seeded default-mode reads, each `safe().to_uri()` re-read strictly) |
+| a | L1 | low | `Mailto` refused `None` where `build` takes it | `Mailto` takes `None` for `to`, `cc`, `bcc`, `headers`, now their defaults |
+| a | L2 | low | `build`, `parse`, `is_address` named private modules and aliases | `__module__` set to `mailtourl`; `build` signature spells out its types; `test_public_functions_live_under_the_package_name` (pickle, pydoc) |
+| a | L3 | low | `MailtoError` example missed an import | every public docstring example imports what it uses; `test_every_public_docstring_example_runs_in_a_fresh_namespace` |
+| a | L4 | low | constructor parameter `message` vs attribute `reason` | renamed to `reason`; `test_mailto_error_takes_its_reason_by_name` |
+| a | L5 | low | README mischaracterised the other "mailto" packages | reworded after re-fetching the PyPI simple index and the JSON of all 22 names on 2026-10-22 |
+| a | L6 | low | old CHANGELOG sections not Keep a Changelog | dated 0.2.0 (2026-10-13) and 0.1.0 (2026-10-12) from git, standard categories with `BREAKING:` items, commit link references; the 1.0.0 "Stable" heading became prose |
+| b | F1 | medium | default-mode offset wrong after bytes that are not UTF-8 | new `_positions.char_starts` walks the UTF-8 maximal subparts that the `replace` handler turns into U+FFFD; `tests/test_offsets.py` (21 fixed cases, 4,000 seeded injections, 20,000-case oracle against `urllib.parse.unquote` of every prefix) |
+| b | F4 | medium | strict accepted an encoded `@` separator after a quoted local part | separator located in the decoded address and required raw at its mapped position; error points at it |
+| b | F5 | low | strict "not UTF-8" offset at the field start | `UnicodeDecodeError.start` mapped back to its escape (`_positions.byte_position`) |
+| b | F2 | low | `is_address` Unicode exclusions undocumented, interpreter-dependent | GUIDE lists the categories, the joiners, the noncharacters and the `unicodedata` version dependence; docstring and README point to it |
+| b | F3 | low | default mode does not normalise `/` paths as a browser does | claim narrowed in README, GUIDE and `parse` docstring to the cleaning applied; the path normalisation listed under "Not covered" |
+| b | F6 | low | CLI stripped all whitespace from stdin | one trailing line ending only; `tests/test_cli_stdin.py` |
+| c | C-3 | medium | same as b F1 | as b F1 |
+| c | C-1 | medium | CLI traceback on stdin bytes that are not UTF-8 | stdin read as bytes and decoded as UTF-8; failure is `MailtoError`, exit 2 |
+| c | C-2 | low | Windows stdin decoded with the code page | same fix; in-process tests with cp1252 and ASCII text streams, a subprocess test and the installed-wheel e2e |
+| c | C-4 | low | `build` trusted `str` subclasses | `build`, `parse`, `is_address` coerce with `str.__str__` (`_chars.plain`); `test_build_reads_a_str_subclass_as_plain_str` |
+| c | C-5 | low | default mode used about 50x the input in memory | no per-character index list: cleaning with one regex pass, index mapped back only on error. Peaks now 3.0x (subject), 7.5x (recipients), against strict 5.0x and 11.2x; the 21.6x for a body of `%41` is `urllib.parse.unquote_to_bytes` itself, equal in both modes; pinned by two tracemalloc tests |
+| d | F1 | medium | same as c C-1/C-2, BOM refused | BOM skipped; e2e pipes UTF-8 and a BOM-prefixed URI into the installed script and `python -m` |
+| e | F1, F2 | medium, low | offsets after bytes that are not UTF-8; the end-of-input remap branch | as b F1; the branch is gone (only blank input maps to 0, pinned by `test_blank_input_reports_offset_zero`) |
+| e | F3 to F8 | medium, low | survivors C13, B5, W17, W33, E3, E1, W14 | one contract each in `tests/test_api_freeze.py` and `tests/test_cli_stdin.py` |
+| e | F9 | low | survivor L7 (`except ValueError`) | undecodable stdin now exits 2 with one line, pinned in process and by subprocess; L7 is now an equivalent mutant: no `ValueError` other than `MailtoError` reaches that handler |
+
+Mutants re-applied to the fixed tree, one at a time, against the new tests:
+
+| Mutant | Result |
+| --- | --- |
+| C13 `is_vchar` 33..127 | killed: `test_a_quoted_pair_cannot_escape_a_control[]` |
+| B5 duplicate check by `name` | killed: `test_build_refuses_a_header_repeated_in_any_case` |
+| W17 `PCHAR` for recipient fields | killed: `test_strict_refuses_a_raw_equals_sign_in_a_recipient_field` |
+| W33 `dict(mail.headers)` in the CLI | killed: `test_repeated_headers_all_reach_the_json` |
+| E3 `if not offset` | killed: `test_the_error_for_offset_zero_still_names_the_offset` |
+| E1 `quoted` `<` | killed: `test_messages_quote_sixty_characters_whole_and_cut_sixty_one` |
+| W14 field name `shown` `<` | killed: `test_strict_messages_name_a_field_of_sixty_characters_whole` |
+| L7 `except ValueError` | equivalent (see e F9) |
+| blank input offset at `begin` | killed: `test_blank_input_reports_offset_zero` |
+| separator check back to `"@" not in raw` | killed: `test_strict_refuses_an_encoded_separator_and_points_at_it` |
+| strict UTF-8 offset at field start | killed: `test_strict_points_at_the_escape_that_is_not_utf_8` |
+| E0 second-byte range widened | killed: `test_lenient_offsets_survive_bytes_that_are_not_utf_8[%E0%80%0A]` |
+| `safe()` keeps repeated names | killed: `test_safe_keeps_only_what_to_uri_can_write` |
+| `is_address` without the domain rule | killed: `test_a_domain_char_that_needs_an_ascii_escape_is_not_an_address` |
+| stdin strips all trailing whitespace | killed: `test_strict_input_keeps_its_padding_on_standard_input` |
+
+Gates at ab4ddb5 on Elena's PC from a bundle of the branch, CPython 3.14.2 in a fresh
+venv, fetched sources, Node.js, Perl and `MAILTOURL_E2E=1`: `ruff format --check .`,
+`ruff check .`, `mypy --strict src`, `mypy --strict src tests` and `pytest` (608 passed,
+none skipped) each exit 0. The decoder mapping and the offset injection check also ran
+clean on CPython 3.10.19, 3.11.5, 3.12.12 and 3.14.2t on this PC.
+
+### Disputed findings
+
+None.
+
+### Pending
+
+Re-verification of round 1 by each lens, then the independent review (item 16).

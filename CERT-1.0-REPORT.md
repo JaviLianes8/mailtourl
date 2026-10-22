@@ -356,10 +356,44 @@ this PC; `pytest` from an archive of the commit on Elena's PC (turn `elena/5`), 
 3.14.2 in a fresh venv, fetched sources, Node.js, Perl and `MAILTOURL_E2E=1`: 681 passed,
 none skipped.
 
+### Round 4 (re-verification of round 3 by lenses c and e on 6f60ae1)
+
+Lens c re-verified F4 as fixed on CPython 3.13.2 and 3.11.5, and its sweep (36 probes and
+20,000 seeded cases on seed 20261023: literal offsets against an independent oracle,
+`is_address` and `build` agreement, the strict round trip, 9 scaling shapes, odd types,
+the command's exits) came back clean but for one finding, present since 07e06f7. Lens e
+re-verified R3-1 and R3-2 as fixed; of its 30 new mutants on the domain literal code, 28
+were killed and 2 survived. Every finding was fixed; none is disputed. The 9 strict
+offsets and 8 reasons of the lens c finding fail on 6f60ae1; the 5 cases for the two
+survivors pass there, as mutation-gap contracts do.
+
+| Lens | Id | Severity | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| c | R3-1 | low | in strict mode, bytes that are not UTF-8 skipped every check of the address, field name or value holding them, so a later bad byte was reported in place of an earlier offender (`mailto:a@%5B1%5Dx%FF` at 17 instead of "text after the domain literal" at 16) | `read_part` still runs the checks when the bytes are not UTF-8, on the value with each bad part replaced, and keeps what they find before the first bad byte; a tie goes to the UTF-8 error. The nine URIs pinned in `tests/test_first_offender.py` with their offsets, eight with their reasons, and five ties where the UTF-8 error wins; CHANGELOG under Fixed, GUIDE on offsets |
+| e | R4-1 | low | survivor Y2: `domain.startswith("[") and len(domain) > 1` in `split_address` | strict offset `mailto:a@%5B` 12 and `build("a@[")` "unterminated domain literal" |
+| e | R4-2 | low | survivor Y29: `enumerate(domain[1:].rstrip(), 1)` in `_check_literal` | strict offsets `mailto:a@%5B1.2%20` 15 and `mailto:a@%5B1.2%09` 15, and `build("a@[1.2 ")` naming the space |
+
+Mutants applied to the fixed tree, one at a time, against `tests/test_first_offender.py`
+and `tests/test_build.py`:
+
+| Mutant | Result |
+| --- | --- |
+| Y2 `domain.startswith("[") and len(domain) > 1` (lens e) | killed: `[mailto:a@%5B-12]`, `[a@[-unterminated domain literal]` |
+| Y29 `enumerate(domain[1:].rstrip(), 1)` (lens e) | killed: `[mailto:a@%5B1.2%20-15]`, `[mailto:a@%5B1.2%09-15]`, `[a@[1.2 -...]` |
+| checks skipped when the bytes are not UTF-8 (the code before the fix) | killed: 9 offset and 8 reason cases |
+
+The lens c probe `utf8_hides.py` reports 0 mismatches out of 9 on the fixed tree.
+
+Fix commit: 0fa30f9 (code, tests, GUIDE, CHANGELOG). Gates at 0fa30f9: `ruff format
+--check .`, `ruff check .`, `mypy --strict src` and `mypy --strict src tests` exit 0 on
+this PC; `pytest` from an archive of the commit on Elena's PC (turn `elena/2`), CPython
+3.14.2 in a fresh venv, fetched sources, Node.js, Perl and `MAILTOURL_E2E=1`: 709 tests, exit
+0, none skipped.
+
 ### Disputed findings
 
 None.
 
 ### Pending
 
-Re-verification of round 3 by lenses c and e, then the independent review (item 16).
+Re-verification of round 4 by lenses c and e, then the independent review (item 16).

@@ -4,8 +4,9 @@
 
 Parse, validate and safely build `mailto:` URIs per RFC 6068.
 
-- Reads a link the way a browser hands it to the mail client, or checks it against the
-  RFC 6068 grammar with the offset of the first problem.
+- Reads a link after the cleaning a browser applies to it (outer spaces and controls,
+  tabs, newlines, the fragment), or checks it against the RFC 6068 grammar with the
+  offset of the first problem.
 - Refuses header injection: a percent-encoded line break of any kind outside the body
   never comes back as a header value, and an encoded or padded `bcc` cannot hide a
   recipient.
@@ -95,7 +96,8 @@ VT, FF, the file, group and record separators, NEL, U+2028, U+2029) raises
 they are classified, so `%62cc` or ` bcc` land in `bcc`; in the default mode a name that
 is still not an RFC 5322 field name (a colon, a control, non-ASCII) is dropped. RFC 6068
 section 4 calls only subject, keywords and body safe in general: `Mailto.safe(allow=...)`
-keeps subject, body, the headers you allow and the recipients that are addr-specs.
+keeps the recipients `is_address` accepts, subject, body and the first of each header you
+allow, and drops whatever of those `to_uri` could not write, so its result always builds.
 
 ### Building
 
@@ -121,9 +123,10 @@ is not an addr-spec (display names included), a domain name holding an ASCII cha
 that would need an escape, a control character outside the body, a header name that is
 not a field name, a repeated header, a header that has its own argument, and the fields
 RFC 6068 section 3 says a client must ignore (originator, routing, trace and MIME
-fields). `Mailto.to_uri` applies the same checks, so a value read in the default mode
-may not build as is: call `safe()` first. In HTML, escape the `&` of the result with
-`html.escape`.
+fields). `Mailto.to_uri` applies the same checks, so a value read in either mode may
+not build as is (strict mode accepts a `From` field, for one, and the default mode a
+control character in the subject); `safe()` returns a copy that always builds. In HTML,
+escape the `&` of the result with `html.escape`.
 
 ## Command line
 
@@ -134,9 +137,10 @@ $ mailtourl build --to a@example.com --subject "Re: 50% off" --header Keywords=s
 mailto:a@example.com?subject=Re:%2050%25%20off&Keywords=sale
 ```
 
-`parse` takes `--strict` and `--safe` and reads standard input when the URI is left out;
-an invalid input exits with status 2 and the reason on standard error. `python -m
-mailtourl` works the same way.
+`parse` takes `--strict` and `--safe` and reads standard input when the URI is left out,
+as UTF-8 whatever the locale, less one line ending, so a pipe reads like an argument. An
+invalid input exits with status 2 and the reason on standard error. `python -m mailtourl`
+works the same way.
 
 ## API
 
@@ -146,7 +150,7 @@ mailtourl` works the same way.
 | `build(to, *, cc, bcc, subject, body, headers)` | Write a URI, refusing unsafe or invalid input |
 | `Mailto` | Frozen value: `to`, `cc`, `bcc`, `subject`, `body`, `headers`, `recipients`, `header()`, `header_all()`, `safe()`, `to_uri()` |
 | `MailtoError` | `ValueError` with `reason` and `offset` |
-| `is_address(text)` | True for an addr-spec a `mailto:` URI may carry (no whitespace, controls or invisible characters) |
+| `is_address(text)` | True for an addr-spec `build` can write (no whitespace, controls, invisible characters or noncharacters; no ASCII in a domain name that would need an escape) |
 
 ## Standards
 
@@ -157,8 +161,9 @@ WHATWG `URL` class of Node.js, Perl's `URI::mailto` and the address parser of Py
 `email` package.
 
 Not covered: IDNA conversion (the standard library only has IDNA 2003, so domains stay
-UTF-8, which RFC 6068 allows), MIME encoded words (passed through as text) and display
-names (RFC 6068 allows only addr-spec).
+UTF-8, which RFC 6068 allows), MIME encoded words (passed through as text), display
+names (RFC 6068 allows only addr-spec) and the path normalisation a browser applies when
+the address part starts with `/` (it drops `.` and `..` segments; `parse` keeps them).
 
 ## Why
 
@@ -167,9 +172,10 @@ whole address list as one opaque path, and `urllib.parse.parse_qsl` on the query
 `+` as a space and hands a percent-encoded line break back as is:
 `parse_qsl("subject=1+1%0D%0ABcc:%20spy@evil.example")` gives
 `[('subject', '1 1\r\nBcc: spy@evil.example')]`, a second header line waiting to be
-copied into a message. Of the packages on PyPI whose names contain "mailto" (checked on
-2026-10-22), `mailto-uri` (1.2.0, released in 2019) only builds URIs and leaves the
-addresses unencoded; the others send mail or render links, and none parses a URI.
+copied into a message. Of the 22 packages on PyPI whose names contain "mailto" (checked
+on 2026-10-22), `mailto-uri` (1.2.0, released in 2019) only builds URIs and leaves the
+addresses unencoded; the others send, manage, analyse or validate email, render links or
+redirect to webmail, and none parses a `mailto:` URI.
 Other languages ship this: Ruby's `URI::MailTo`, Perl's `URI::mailto`, Android's
 `android.net.MailTo` and Swift's `swift-rfc-6068`. `mailtourl` is a small, typed,
 zero-dependency codec that reads like a browser, validates like the RFC and refuses

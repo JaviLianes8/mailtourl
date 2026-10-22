@@ -53,7 +53,7 @@ def test_every_readme_example_runs_and_prints_its_comment() -> None:
 
 
 def test_every_guide_example_runs_and_prints_its_comment() -> None:
-    assert _run_blocks(GUIDE, "GUIDE.md") == (7, 30)
+    assert _run_blocks(GUIDE, "GUIDE.md") == (7, 32)
 
 
 def test_the_readme_links_are_absolute_and_carry_the_badge() -> None:

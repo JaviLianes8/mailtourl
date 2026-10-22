@@ -74,10 +74,13 @@ for uri in ("mailto:a@x.example?subject=a%0Db", "mailto:a%0A@x.example", "mailto
   such an address and `to_uri` raises for it.
 - Field names are RFC 5322 field names, a field is never empty and has an `=`, no field
   name appears twice (ignoring case: the grammar allows it, section 2 advises against
-  it), body line breaks are CRLF, there is no control but tab outside the body and no
-  fragment.
+  it), no field holds a C0 or C1 control but tab (the body also holds line breaks,
+  written as CRLF), and there is no fragment.
 - `MailtoError.offset` is the index in `uri` of the first character that breaks a rule;
-  for an escape, the `%` that starts it. Default-mode offsets point the same way, after
+  for an escape, the `%` that starts it; for something missing (an `@`, a closing quote,
+  a part after a dot, an `=`), the place where it is missing. When the text breaks
+  several rules, the offset is that of the first offending character in the text,
+  inside an address or a field name too. Default-mode offsets point the same way, after
   bytes that are not UTF-8 too.
 
 ```python
@@ -97,7 +100,7 @@ for uri in (
 # header field 'subject' repeated 30
 # body line break not written as %0D%0A 25
 # percent-encoding of ASCII in a domain name 11
-# character ' ' not allowed in local part 'j d' 7
+# character ' ' not allowed in local part 'j d' 8
 # a mailto: URI takes no fragment 18
 print(parse("mailto:%22j%5C%20d%22@x.example", strict=True).to)
 # ('"j\\ d"@x.example',)
@@ -122,7 +125,8 @@ everything but `to` is keyword-only. It stores tuples of plain `str` and raises
   recipients `is_address` accepts; subject and body unless they hold a control character
   `build` refuses; and, of the headers named in `allow` (ignoring case), the first of each
   name that `build` accepts. RFC 6068 section 4 calls only subject, keywords and body
-  safe in general; widen `allow` for sources you trust.
+  safe in general; widen `allow` for sources you trust. `allow` is one name as a `str` or
+  an iterable of names; `None` raises `TypeError`.
 - `to_uri()`: the URI, built with the same rules and checks as `build`. It raises
   `MailtoError` for whatever `build` refuses, whichever mode read the value: strict mode
   accepts a `From` field and a raw `&` in a domain name of the path, the default mode a
@@ -163,7 +167,9 @@ value (body line breaks as CRLF). Each recipient argument is a `str` or an itera
 
 - Addresses are written with every character the URI cannot hold raw percent-encoded,
   plus `,`, `&`, `;` and `=` (valid under both readings of RFC 6068 erratum 7919) and an
-  `@` inside a quoted local part. Non-ASCII is written as UTF-8 escapes.
+  `@` inside a quoted local part. In `cc` and `bcc`, which are field values, `+` is
+  encoded too (`bill%2Bietf@example.org`), so a form decoder cannot read it as a space
+  (section 5). Non-ASCII is written as UTF-8 escapes.
 - Field values keep raw only the RFC 6068 `qchar` set less `+`, which form decoders read
   as a space. Hex digits are upper case.
 - Body line breaks (CR, LF or CRLF) are written as `%0D%0A` (RFC 6068 section 5).
@@ -207,7 +213,7 @@ for arguments in (
 # pass 'subject' through its own argument, not headers
 # RFC 6068 section 3 says clients MUST ignore 'Content-Type'
 # header 'x-a' given twice
-# 'X A' is not an RFC 5322 header field name
+# character ' ' not allowed in a header field name
 ```
 
 The fields RFC 6068 section 3 says a client must ignore are refused by name: `From`,
@@ -224,7 +230,8 @@ section 2 allows: a dot-atom or quoted local part, then `@`, then a dot-atom dom
 domain literal. Comments, obsolete forms, display names and whitespace (bare, or inside
 quotes without a backslash) are refused. A domain name may not hold an ASCII character
 that would need an escape (`` # % & / = ? ^ ` { | } ``): RFC 6068 allows escapes in a
-domain name only for UTF-8, so no URI could carry it. `is_address(text)` is true exactly
+domain name only for UTF-8, so no URI could carry it. Nor may it hold `+`: in `cc` or
+`bcc` a form decoder reads a raw `+` as a space, and the escape is not allowed there. `is_address(text)` is true exactly
 when `build(text)` can write `text`.
 
 Non-ASCII is allowed (RFC 6532) except what would hide what a reader sees: the
@@ -251,8 +258,9 @@ print(is_address("a@[192.0.2.1]"), is_address("a b@x.example"))
 
 `MailtoError(reason, offset=None)` is a `ValueError`. `reason` is the message without
 the position and `offset` is the index in the parsed string where the problem starts, or
-`None` for the builder's errors. A message quotes at most 60 characters of the input. Arguments of the
-wrong type (bytes, numbers, `None` where a string is needed) raise `TypeError`. The
+`None` for the builder's errors. A message quotes at most 60 characters of the input,
+and an invalid header field name is reported by the character at fault, never quoted
+whole (a `Name: value` typo would show the value). Arguments of the wrong type (bytes, numbers, `None` where a string is needed) raise `TypeError`. The
 exception types and `reason`/`offset` are part of the stable API; the wording of the
 messages is not.
 
@@ -269,10 +277,16 @@ input is decoded as UTF-8 whatever the locale or console code page (a leading by
 mark is skipped) and loses one trailing line ending (LF, CRLF or CR) and nothing else, so
 piped text reads exactly like the same text given as `URI`; bytes that are not UTF-8
 exit with status 2. `build` prints the URI. An invalid input exits with status 2 and the
-reason on standard error; `python -m mailtourl` works the same way.
+reason on standard error, as does a missing standard input or output (a closed
+descriptor, `pythonw`, a service); `--header` without `=` is reported without echoing
+the argument. `python -m mailtourl` works the same way.
 
 ## Stability
 
 From 1.0.0 the five public names, their signatures and defaults, the fields of
 `Mailto`, the exception types, `MailtoError.reason` and `offset`, and the command line
-options follow Semantic Versioning. Error message wording may improve in a minor release.
+follow Semantic Versioning. For the command line that is its options, the JSON that
+`parse` prints (one object with the keys `to`, `cc`, `bcc`, `subject`, `body` and
+`headers`; recipients as lists of strings, `headers` as `[name, value]` lists, ASCII
+with `\u` escapes) and its exit statuses (0 on success, 2 for invalid input or usage).
+Error message wording may improve in a minor release.

@@ -10,7 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 The public API is now stable: the five names in `mailtourl.__all__` (`parse`, `build`,
 `Mailto`, `MailtoError`, `is_address`), their signatures, defaults and error types, and
-the `mailtourl` command follow Semantic Versioning from this release on. No release
+the `mailtourl` command (its options, the JSON that `parse` prints and its exit
+statuses) follow Semantic Versioning from this release on. No release
 before this one was published to PyPI. What is stable:
 
 - Reading: `parse` reads a URI after the cleaning a browser applies to a link, or checks
@@ -59,6 +60,24 @@ before this one was published to PyPI. What is stable:
   mark) and drops one trailing line ending only, so piped text reads like an argument; it
   stripped all surrounding whitespace, decoded with the console code page on Windows and
   crashed on bytes that are not UTF-8, which now exit with status 2.
+- `build` and `Mailto.to_uri` write a `+` in a `cc` or `bcc` address as `%2B`, as in
+  every other field value, so a form decoder cannot read it as a space (RFC 6068
+  section 5). A domain name holding `+` cannot be written that way (RFC 6068 allows no
+  ASCII escape there), so `is_address` refuses it, `build` raises `MailtoError` for it
+  and `Mailto.safe` drops it.
+- An invalid header field name is reported by the character at fault ("character ':'
+  not allowed in a header field name"), in `build` and in strict `parse`, instead of
+  quoting the name, which a `Name: value` typo fills with the value. The command no
+  longer echoes a `--header` argument that lacks `=`.
+- `Mailto.safe(allow=None)` raises `TypeError`; it silently kept no header. `allow` is
+  one name as a `str` or an iterable of names.
+- `build` and `Mailto` read a `(name, value)` pair from what the tuple or list holds, so
+  a subclass that overrides `__iter__`, `__len__` or `__getitem__` reads the same in
+  both, and the constructor raises `TypeError` instead of `ValueError` for one that lies.
+- The command exits with status 2 and one line ("no standard input", "no standard
+  output") when the stream is missing (a closed descriptor, `pythonw`, a service); it
+  crashed with a traceback and status 1.
+- The help of `parse --safe` says it applies `Mailto.safe()`.
 
 ### Fixed
 
@@ -69,7 +88,13 @@ before this one was published to PyPI. What is stable:
 - In strict mode, "percent-encoded bytes are not UTF-8" pointed at the start of the
   field instead of the first escape that breaks UTF-8.
 - The default mode kept a list of every character index, about 50 times the input in
-  memory; it now needs no more than strict mode.
+  memory; it now needs no more than strict mode, and removing tabs and newlines costs at
+  most a copy of the input.
+- In strict mode, the offset of a malformed address or header field name pointed at
+  where it starts; it now points at the character at fault (for something missing, such
+  as the `@`, where it is missing). When a part breaks several rules, the offset is that
+  of the first one in the text: a fragment, a raw character, a broken escape or bytes
+  that are not UTF-8 no longer hide an earlier problem.
 
 ### Added
 

@@ -4,8 +4,8 @@
 
 Parse, validate and safely build `mailto:` URIs per RFC 6068.
 
-- Reads a link after the cleaning a browser applies to it (outer spaces and controls,
-  tabs, newlines, the fragment), or checks it against the RFC 6068 grammar with the
+- Reads a link after the cleaning a browser applies to it (outer spaces and C0
+  controls, tabs, newlines, the fragment), or checks it against the RFC 6068 grammar with the
   offset of the first problem.
 - Refuses header injection: a percent-encoded line break of any kind outside the body
   never comes back as a header value, and an encoded or padded `bcc` cannot hide a
@@ -49,7 +49,7 @@ print(repr(mail.subject), repr(mail.body))
 `parse` reads recipients from the path and from every `to`, `cc` and `bcc` field, in
 order, decodes `subject` and `body` (the first of each wins) and keeps every other field
 in `headers` as `(name, value)` pairs. Like a browser, it strips leading and trailing
-controls and spaces, removes tabs and newlines and ignores the fragment. A `+` is never
+C0 controls and spaces, removes tabs and newlines and ignores the fragment. A `+` is never
 read as a space.
 
 ### Strict mode
@@ -68,9 +68,11 @@ except MailtoError as error:
 part, complete escapes that decode to UTF-8, every address an RFC 5322 addr-spec (no
 comments, no obsolete forms, no whitespace) with an unencoded `@` before the domain,
 ASCII escapes in a domain only inside a domain literal, field names that are RFC 5322
-field names, body line breaks as CRLF, no controls outside the body and no fragment. It
-also refuses a repeated field: the ABNF allows one, but section 2 advises against it
-because clients disagree on what it means. The offset points at the offending character.
+field names, no C0 or C1 control but tab in any field (the body also holds line breaks,
+as CRLF) and no fragment. It also refuses a repeated field: the ABNF allows one, but
+section 2 advises against it because clients disagree on what it means. The offset
+points at the first offending character in the text, inside an address or a field name
+too.
 
 ### Header injection and unsafe fields
 
@@ -117,11 +119,12 @@ for bad in ({"subject": "Hi\r\nBcc: x@y.example"}, {"headers": {"From": "x@y.exa
 ```
 
 `build` (and `Mailto.to_uri`) writes what RFC 6068 calls for: `@` encoded inside a quoted
-local part, `+` encoded in field values so form decoders cannot read it as a space, upper
-case hex, UTF-8 for anything outside ASCII. It raises `MailtoError` for an address that
-is not an addr-spec (display names included), a domain name holding an ASCII character
-that would need an escape, a control character outside the body, a header name that is
-not a field name, a repeated header, a header that has its own argument, and the fields
+local part, `+` encoded in field values (`cc` and `bcc` addresses included) so form
+decoders cannot read it as a space, upper case hex, UTF-8 for anything outside ASCII. It
+raises `MailtoError` for an address that is not an addr-spec (display names included), a
+domain name holding `+` or an ASCII character that would need an escape, a control
+character other than tab (and, in the body, line breaks), a header name that is not a
+field name, a repeated header, a header that has its own argument, and the fields
 RFC 6068 section 3 says a client must ignore (originator, routing, trace and MIME
 fields). `Mailto.to_uri` applies the same checks, so a value read in either mode may
 not build as is (strict mode accepts a `From` field, for one, and the default mode a
@@ -150,7 +153,7 @@ works the same way.
 | `build(to, *, cc, bcc, subject, body, headers)` | Write a URI, refusing unsafe or invalid input |
 | `Mailto` | Frozen value: `to`, `cc`, `bcc`, `subject`, `body`, `headers`, `recipients`, `header()`, `header_all()`, `safe()`, `to_uri()` |
 | `MailtoError` | `ValueError` with `reason` and `offset` |
-| `is_address(text)` | True for an addr-spec `build` can write (no whitespace, controls, invisible characters or noncharacters; no ASCII in a domain name that would need an escape) |
+| `is_address(text)` | True for an addr-spec `build` can write (no whitespace, controls, invisible characters or noncharacters; no `+` or ASCII that would need an escape in a domain name) |
 
 ## Standards
 

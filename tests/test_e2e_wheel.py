@@ -38,11 +38,12 @@ assert mail.to_uri() == uri and pickle.loads(pickle.dumps(mail)) == mail
 assert parse(" mailto:a@x.example?%62cc=s@e.example#f\n").bcc == ("s@e.example",)
 assert parse("mailto:?From=x@y.example&Keywords=k").safe().headers == (("Keywords", "k"),)
 assert build(body="a\nb") == "mailto:?body=a%0D%0Ab" and is_address("a@[192.0.2.1]")
-assert Mailto.__module__ == MailtoError.__module__ == "mailtourl"
-import doctest, mailtourl._address, mailtourl._build, mailtourl._errors, mailtourl._parse
-for module in (mailtourl, mailtourl._address, mailtourl._build, mailtourl._parse):
-    found = doctest.testmod(module)
-    assert found.failed == 0 and found.attempted > 0, (module, found)
+assert all(getattr(mailtourl, name).__module__ == "mailtourl" for name in mailtourl.__all__)
+import doctest
+# Every public name, and its methods, report the package as their module, so testmod of the
+# package runs all their examples.
+found = doctest.testmod(mailtourl)
+assert found.failed == 0 and found.attempted >= 30, found
 for call in (
     lambda: parse("mailto:a@x.example?subject=a%0D%0ABcc:x@y.example"),
     lambda: parse("mailto:a@x.example#f", strict=True),
@@ -116,6 +117,14 @@ def test_installed_wheel_end_to_end(tmp_path: Path) -> None:
         shown = _run(*command, "parse", cwd=work, stdin=b"mailto:a@x.example?subject=Hi\n")
         assert shown.returncode == 0, shown.stderr
         assert json.loads(shown.stdout)["subject"] == "Hi"
+        # Piped UTF-8 reads like an argument, a byte order mark included, whatever the locale.
+        for flags, piped in (
+            ([], b"mailto:a@x.example?subject=caf\xc3\xa9\n"),
+            (["--strict"], b"\xef\xbb\xbfmailto:?subject=caf%C3%A9\r\n"),
+        ):
+            shown = _run(*command, "parse", *flags, cwd=work, stdin=piped)
+            assert shown.returncode == 0, shown.stderr
+            assert json.loads(shown.stdout)["subject"] == "café"
         made = _run(*command, "build", "--to", "a@x.example", "--body", "a b", cwd=work)
         assert made.stdout.decode().strip() == "mailto:a@x.example?body=a%20b"
     failed = _run(script, "parse", "--strict", "mailto:a b@x.example", cwd=work)

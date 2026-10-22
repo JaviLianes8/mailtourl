@@ -61,6 +61,13 @@ STRICT = [
     ("mailto:?body=%0A%FF", 13),
     ("mailto:?X%20Y%FF=1", 9),
     ("mailto:a@%5B1%FF", 13),
+    # An earlier problem still wins when another check or a raw character fails too.
+    ("mailto:a%20b<@x%FF", 8),
+    ("mailto:a%20b%0A@x%FF", 8),
+    # The checks read the text next to a bad part as it is: a backslash or a CR before it.
+    ("mailto:%22a%5C%FF", 14),
+    ("mailto:?body=%0D%FF", 13),
+    ("mailto:?body=%0D%FF%0A", 13),
     # Strict body offsets skip the escapes before the problem.
     ("mailto:?body=%41%00", 16),
     ("mailto:?body=caf%C3%A9%0A", 22),
@@ -99,6 +106,13 @@ def test_bytes_that_are_not_utf8_win_a_tie_with_what_they_cut_short(uri: str) ->
     with pytest.raises(MailtoError, match="not UTF-8") as caught:
         parse(uri, strict=True)
     assert caught.value.offset == uri.index("%FF")
+
+
+def test_a_reason_quotes_a_bad_part_as_the_replacement_character() -> None:
+    with pytest.raises(MailtoError) as caught:
+        parse("mailto:.%FF", strict=True)
+    assert caught.value.reason == "empty dot-separated part in local part '.�'"
+    assert caught.value.offset == 7
 
 
 def test_the_raw_character_rule_wins_a_tie() -> None:

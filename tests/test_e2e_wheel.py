@@ -38,6 +38,12 @@ assert mail.to_uri() == uri and pickle.loads(pickle.dumps(mail)) == mail
 assert parse(" mailto:a@x.example?%62cc=s@e.example#f\n").bcc == ("s@e.example",)
 assert parse("mailto:?From=x@y.example&Keywords=k").safe().headers == (("Keywords", "k"),)
 assert build(body="a\nb") == "mailto:?body=a%0D%0Ab" and is_address("a@[192.0.2.1]")
+assert all(getattr(mailtourl, name).__module__ == "mailtourl" for name in mailtourl.__all__)
+import doctest
+# Every public name, and its methods, report the package as their module, so testmod of the
+# package runs all their examples.
+found = doctest.testmod(mailtourl)
+assert found.failed == 0 and found.attempted >= 30, found
 for call in (
     lambda: parse("mailto:a@x.example?subject=a%0D%0ABcc:x@y.example"),
     lambda: parse("mailto:a@x.example#f", strict=True),
@@ -71,10 +77,22 @@ def test_installed_wheel_end_to_end(tmp_path: Path) -> None:
     names = zipfile.ZipFile(wheel).namelist()
     assert "mailtourl/py.typed" in names
     assert not any(name.startswith(("tests/", "scripts/")) for name in names)
+    dist_info = wheel.name.split("-py3-")[0] + ".dist-info"
+    assert {name.split("/")[0] for name in names} == {"mailtourl", dist_info}
+    assert f"{dist_info}/licenses/LICENSE" in names
     entry_points = next(name for name in names if name.endswith("entry_points.txt"))
     assert "mailtourl = mailtourl._cli:main" in zipfile.ZipFile(wheel).read(entry_points).decode()
+    metadata = zipfile.ZipFile(wheel).read(f"{dist_info}/METADATA").decode()
+    assert "Classifier: Development Status :: 5 - Production/Stable" in metadata
+    requires = [line for line in metadata.splitlines() if line.startswith("Requires-Dist:")]
+    assert all("extra == 'dev'" in line for line in requires), requires
+    assert "Requires-Python: >=3.10" in metadata
+    checked = _run(sys.executable, "-m", "twine", "check", "--strict", wheel, sdist)
+    assert checked.returncode == 0, checked.stdout + checked.stderr
     listing = _run(sys.executable, "-m", "tarfile", "-l", sdist).stdout.decode()
-    assert "IMPROVEMENTS-round" not in listing
+    assert "IMPROVEMENTS-round" not in listing and "CERT-1.0" not in listing
+    for shipped in ("LICENSE", "README.md", "GUIDE.md", "CHANGELOG.md", "src/mailtourl/py.typed"):
+        assert shipped in listing, shipped
     assert "tests/upstream/MANIFEST.json" in listing
     for fetched in ("rfc6068.txt", "rfc3986.txt", "rfc5322.txt", "rfc6532.txt", "url.bs"):
         assert fetched not in listing, fetched
@@ -99,6 +117,14 @@ def test_installed_wheel_end_to_end(tmp_path: Path) -> None:
         shown = _run(*command, "parse", cwd=work, stdin=b"mailto:a@x.example?subject=Hi\n")
         assert shown.returncode == 0, shown.stderr
         assert json.loads(shown.stdout)["subject"] == "Hi"
+        # Piped UTF-8 reads like an argument, a byte order mark included, whatever the locale.
+        for flags, piped in (
+            ([], b"mailto:a@x.example?subject=caf\xc3\xa9\n"),
+            (["--strict"], b"\xef\xbb\xbfmailto:?subject=caf%C3%A9\r\n"),
+        ):
+            shown = _run(*command, "parse", *flags, cwd=work, stdin=piped)
+            assert shown.returncode == 0, shown.stderr
+            assert json.loads(shown.stdout)["subject"] == "café"
         made = _run(*command, "build", "--to", "a@x.example", "--body", "a b", cwd=work)
         assert made.stdout.decode().strip() == "mailto:a@x.example?body=a%20b"
     failed = _run(script, "parse", "--strict", "mailto:a b@x.example", cwd=work)

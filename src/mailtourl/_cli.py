@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import codecs
 import json
 import sys
 from collections.abc import Sequence
@@ -21,7 +22,9 @@ def _parser() -> argparse.ArgumentParser:
     read.add_argument("uri", nargs="?", help="the URI; read from standard input when absent")
     read.add_argument("--strict", action="store_true", help="reject input outside RFC 6068")
     read.add_argument(
-        "--safe", action="store_true", help="drop headers other than keywords (RFC 6068 4)"
+        "--safe",
+        action="store_true",
+        help="apply Mailto.safe(): keep only what is safe in general and to_uri writes",
     )
     write = commands.add_parser("build", help="print a mailto: URI built from the options")
     for flag in ("--to", "--cc", "--bcc"):
@@ -45,15 +48,42 @@ def _as_json(mail: Mailto) -> dict[str, object]:
     }
 
 
+def _read(stream: TextIO | None) -> str:
+    """Standard input decoded as UTF-8 whatever the locale, less one line ending.
+
+    So piped text reads exactly like the same text given as an argument. There is no
+    stream at all under a closed descriptor, pythonw, a service or a scheduled task.
+    """
+    if stream is None:
+        raise MailtoError("no standard input")
+    raw = getattr(stream, "buffer", None)
+    if raw is None:
+        text = stream.read()
+    else:
+        data = raw.read()
+        skip = len(codecs.BOM_UTF8) if data.startswith(codecs.BOM_UTF8) else 0
+        try:
+            text = data[skip:].decode("utf-8")
+        except UnicodeDecodeError as error:
+            byte = skip + error.start
+            raise MailtoError(f"standard input is not UTF-8 at byte {byte}") from None
+    for end in ("\r\n", "\n", "\r"):
+        if text.endswith(end):
+            return text[: -len(end)]
+    return text
+
+
 def main(
     argv: Sequence[str] | None = None, stdin: TextIO | None = None, stdout: TextIO | None = None
 ) -> int:
     """Run the ``mailtourl`` command and return its exit status."""
     args = _parser().parse_args(argv)
-    out = stdout or sys.stdout
+    out: TextIO | None = stdout or sys.stdout
     try:
+        if out is None:
+            raise MailtoError("no standard output")
         if args.command == "parse":
-            text = args.uri if args.uri is not None else (stdin or sys.stdin).read().strip()
+            text = args.uri if args.uri is not None else _read(stdin or sys.stdin)
             mail = parse(text, strict=args.strict)
             # ASCII output cannot fail on a console or pipe that lacks a character.
             json.dump(_as_json(mail.safe() if args.safe else mail), out, ensure_ascii=True)
@@ -62,7 +92,8 @@ def main(
             for item in args.header:
                 name, equals, value = item.partition("=")
                 if not equals:
-                    raise MailtoError(f"--header expects NAME=VALUE, got {item!r}")
+                    # The argument is not echoed: "Name: value" would print the value.
+                    raise MailtoError("--header expects NAME=VALUE")
                 headers.append((name, value))
             out.write(
                 build(
@@ -75,7 +106,8 @@ def main(
                 )
             )
     except MailtoError as error:
-        print(f"mailtourl: {error}", file=sys.stderr)
+        if sys.stderr is not None:
+            print(f"mailtourl: {error}", file=sys.stderr)
         return 2
     out.write("\n")
     return 0

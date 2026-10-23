@@ -1,4 +1,4 @@
-"""The README examples run and print what their comments say; docs and versions agree."""
+"""The README and GUIDE examples print what their comments say; docs and versions agree."""
 
 from __future__ import annotations
 
@@ -8,16 +8,18 @@ import itertools
 import re
 import shlex
 from pathlib import Path
+from urllib.parse import parse_qsl
 
 import mailtourl
 from mailtourl._cli import main
 
 ROOT = Path(__file__).resolve().parents[1]
 README = (ROOT / "README.md").read_text(encoding="utf-8")
+GUIDE = (ROOT / "GUIDE.md").read_text(encoding="utf-8")
 
 
-def _python_blocks() -> list[str]:
-    return re.findall(r"```python\n(.*?)```", README, flags=re.DOTALL)
+def _python_blocks(text: str = README) -> list[str]:
+    return re.findall(r"```python\n(.*?)```", text, flags=re.DOTALL)
 
 
 def _expected_output(block: str) -> list[str]:
@@ -32,18 +34,41 @@ def _expected_output(block: str) -> list[str]:
     return expected
 
 
-def test_every_readme_example_runs_and_prints_its_comment() -> None:
+def _run_blocks(text: str, name: str) -> tuple[int, int]:
     checked = 0
-    for block in _python_blocks():
+    blocks = _python_blocks(text)
+    for block in blocks:
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            exec(compile(block, "README.md", "exec"), {"__name__": "readme"})
+            exec(compile(block, name, "exec"), {"__name__": "docs"})
         expected = _expected_output(block)
         assert expected, block
         assert out.getvalue().splitlines() == expected
         checked += len(expected)
-    assert len(_python_blocks()) == 4
-    assert checked == 10
+    return len(blocks), checked
+
+
+def test_every_readme_example_runs_and_prints_its_comment() -> None:
+    assert _run_blocks(README, "README.md") == (4, 10)
+
+
+def test_every_guide_example_runs_and_prints_its_comment() -> None:
+    assert _run_blocks(GUIDE, "GUIDE.md") == (7, 32)
+
+
+def test_the_readme_links_are_absolute_and_carry_the_badge() -> None:
+    for target in re.findall(r"\]\(([^)]+)\)", README):
+        assert target.startswith("https://"), target
+    image = "https://lianes8studio.com/certified/lianes8-certified-badge.svg"
+    badge = f"[![Lianes8 Certified]({image})](https://lianes8studio.com/certified)"
+    assert README.splitlines()[2] == badge
+    for page in ("GUIDE.md", "CHANGELOG.md", "LICENSE"):
+        assert f"https://github.com/JaviLianes8/mailtourl/blob/main/{page}" in README
+
+
+def test_the_standard_library_output_quoted_in_the_readme_is_real() -> None:
+    shown = parse_qsl("subject=1+1%0D%0ABcc:%20spy@evil.example")
+    assert f"`{shown!r}`" in README
 
 
 def test_every_command_line_example_prints_what_the_readme_shows() -> None:

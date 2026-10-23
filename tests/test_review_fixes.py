@@ -58,7 +58,7 @@ def test_lenient_mode_drops_fields_whose_name_is_not_a_field_name(name: str) -> 
 def test_strict_mode_refuses_a_percent_encoded_separator() -> None:
     with pytest.raises(MailtoError, match="'@' before the domain") as caught:
         parse("mailto:joe%40ex%61mple.com", strict=True)
-    assert caught.value.offset == 7
+    assert caught.value.offset == 10
     assert parse("mailto:joe%40example.com").to == ("joe@example.com",)
 
 
@@ -117,7 +117,7 @@ def test_a_non_pair_header_names_the_problem(call: object) -> None:
     ],
 )
 def test_bytes_are_named_in_the_type_error(call: object) -> None:
-    with pytest.raises(TypeError, match="got bytes"):
+    with pytest.raises(TypeError, match=r"got bytes|got bytearray"):
         call()  # type: ignore[operator]
 
 

@@ -8,8 +8,9 @@ import re
 from mailtourl import Mailto, build, is_address, parse
 
 ATEXT = "abcXYZ019!#$%&'*+-/=?^_`{|}~é納"
-# Domain atoms avoid the atext characters a URI cannot hold raw: see build's domain rule.
-DOMAIN = "abcXYZ019-!$'*+é納"
+# Domain atoms avoid the atext characters a URI cannot hold raw (and "+", which a form
+# decoder reads as a space in cc or bcc): see build's domain rule.
+DOMAIN = "abcXYZ019-!$'*é納"
 QTEXT = "a Z9!#$%&'()*+,-./:;<=>?@[]^_`{|}~é"
 FIELD = "aZ9 -._~!$&'()*+,;=:@/?#[]%\"<>\\^`{|}\té納\U0001f600"
 
@@ -61,6 +62,8 @@ def test_random_values_round_trip_through_build_and_both_parsers() -> None:
         mail = _mailto(rng)
         assert all(is_address(address) for address in mail.recipients), mail
         uri = mail.to_uri()
+        # A form decoder reads a raw "+" as a space (RFC 6068 section 5).
+        assert "+" not in uri.partition("?")[2], uri
         expected = _crlf(mail)
         assert parse(uri, strict=True) == expected, uri
         assert parse(uri) == expected, uri
